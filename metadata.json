@@ -1,0 +1,6 @@
+{
+  "name": "Verda Admin — Specialty Coffee & Food Management",
+  "description": "Minimalist admin management console for specialty coffee and matcha menus, promotional billboards, and real-time order fulfillment.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

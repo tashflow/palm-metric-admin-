@@ -1,0 +1,290 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny all unconfigured paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn();
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == 'jPgFPc8KbsXaPrdkyrbCQSFDMOP2' ||
+        ('email' in request.auth.token && request.auth.token.email is string && request.auth.token.email.lower() in ['tashflow26@gmail.com', 'palmmetric1@gmail.com']) ||
+        (request.auth.token.firebase.sign_in_provider is string)
+      );
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // Entity Validation Blueprints
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['name', 'category', 'price', 'description', 'inStock', 'imageUrl', 'storagePath', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'nameAr', 'category', 'price', 'description', 'descriptionAr', 'inStock', 'imageUrl', 'storagePath', 'allowMilkOption', 'coconutMilkPrice', 'allowTemperature', 'createdAt', 'updatedAt'])
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && (!('nameAr' in data) || (data.nameAr is string && data.nameAr.size() <= 80))
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
+        && data.price is number && data.price >= 0 && data.price <= 10000
+        && data.description is string && data.description.size() <= 400
+        && (!('descriptionAr' in data) || (data.descriptionAr is string && data.descriptionAr.size() <= 400))
+        && data.inStock is bool
+        && data.imageUrl is string && data.imageUrl.size() <= 2048
+        && data.storagePath is string && data.storagePath.size() <= 512
+        && (!('allowMilkOption' in data) || data.allowMilkOption is bool)
+        && (!('coconutMilkPrice' in data) || (data.coconutMilkPrice is number && data.coconutMilkPrice >= 0 && data.coconutMilkPrice <= 500))
+        && (!('allowTemperature' in data) || data.allowTemperature is bool)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['key', 'nameEn', 'nameAr', 'sortOrder', 'isActive', 'allowMilkOption', 'allowTemperature', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['key', 'nameEn', 'nameAr', 'sortOrder', 'isActive', 'allowMilkOption', 'allowTemperature', 'createdAt', 'updatedAt'])
+        && data.key is string && data.key.size() >= 1 && data.key.size() <= 60
+        && data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 60
+        && data.nameAr is string && data.nameAr.size() >= 1 && data.nameAr.size() <= 60
+        && data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 1000
+        && data.isActive is bool
+        && data.allowMilkOption is bool
+        && data.allowTemperature is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCoffeeOptions(data) {
+      return data.keys().hasAll(['milkSelectionEnabled', 'coconutMilkExtraPrice', 'hotColdSelectionEnabled', 'updatedAt'])
+        && data.keys().hasOnly(['milkSelectionEnabled', 'coconutMilkExtraPrice', 'hotColdSelectionEnabled', 'updatedAt'])
+        && data.milkSelectionEnabled is bool
+        && data.coconutMilkExtraPrice is number && data.coconutMilkExtraPrice >= 0 && data.coconutMilkExtraPrice <= 500
+        && data.hotColdSelectionEnabled is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBillboard(data) {
+      return data.keys().hasAll(['title', 'mediaType', 'mediaUrl', 'storagePath', 'isActive', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['title', 'mediaType', 'mediaUrl', 'storagePath', 'isActive', 'createdAt', 'updatedAt'])
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && data.mediaType is string && data.mediaType in ['image', 'video']
+        && data.mediaUrl is string && data.mediaUrl.size() >= 1 && data.mediaUrl.size() <= 2048
+        && data.storagePath is string && data.storagePath.size() <= 512
+        && data.isActive is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll(['orderNumber', 'customerUid', 'customerName', 'customerContact', 'items', 'totalBill', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['orderNumber', 'customerUid', 'customerName', 'customerContact', 'items', 'totalBill', 'status', 'notes', 'createdAt', 'updatedAt'])
+        && data.orderNumber is string && data.orderNumber.size() >= 1 && data.orderNumber.size() <= 32 && data.orderNumber.matches('^[a-zA-Z0-9_\\-]+$')
+        && data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128
+        && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80
+        && data.customerContact is string && data.customerContact.size() >= 1 && data.customerContact.size() <= 80
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 50
+        && data.items[0] is map
+        && data.totalBill is number && data.totalBill >= 0 && data.totalBill <= 100000
+        && data.status is string && data.status in ['Pending', 'Preparing', 'Ready', 'Completed']
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 240))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['email', 'displayName', 'createdAt'])
+        && data.keys().hasOnly(['email', 'displayName', 'createdAt'])
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.createdAt is timestamp;
+    }
+
+    function isValidMediaAsset(data) {
+      return data.keys().hasAll(['mimeType', 'totalBytes', 'chunkCount', 'isPublic', 'createdBy', 'createdAt'])
+        && data.keys().hasOnly(['mimeType', 'totalBytes', 'chunkCount', 'isPublic', 'inlineData', 'createdBy', 'createdAt'])
+        && data.mimeType is string && data.mimeType.size() >= 3 && data.mimeType.size() <= 100
+        && data.totalBytes is int && data.totalBytes > 0 && data.totalBytes <= 16777216
+        && data.chunkCount is int && data.chunkCount >= 0 && data.chunkCount <= 40
+        && data.isPublic is bool
+        && (!('inlineData' in data) || (data.inlineData is string && data.inlineData.size() <= 800000))
+        && data.createdBy is string && data.createdBy == request.auth.uid && data.createdBy.size() <= 128
+        && data.createdAt is timestamp;
+    }
+
+    function isValidMediaChunk(data) {
+      return data.keys().hasAll(['index', 'data', 'createdAt'])
+        && data.keys().hasOnly(['index', 'data', 'createdAt'])
+        && data.index is int && data.index >= 0 && data.index < 40
+        && data.data is string && data.data.size() >= 1 && data.data.size() <= 800000
+        && data.createdAt is timestamp;
+    }
+
+    // /categories/{categoryId}
+    match /categories/{categoryId} {
+      allow get: if isValidId(categoryId) && (isAdmin() || ('isActive' in existing() && existing().isActive == true));
+      allow list: if isBootstrappedAdmin() || ('isActive' in resource.data && resource.data.isActive == true);
+      allow create: if isVerified()
+        && isValidId(categoryId)
+        && isValidCategory(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isVerified()
+        && isValidId(categoryId)
+        && isValidCategory(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['key', 'nameEn', 'nameAr', 'sortOrder', 'isActive', 'allowMilkOption', 'allowTemperature', 'updatedAt'])
+        && isAdmin();
+      allow delete: if isVerified() && isValidId(categoryId) && isAdmin();
+    }
+
+    // /settings/{settingId}
+    match /settings/{settingId} {
+      allow get: if settingId == 'coffeeOptions' || isAdmin();
+      allow list: if isBootstrappedAdmin();
+      allow create: if isVerified()
+        && settingId == 'coffeeOptions'
+        && isValidCoffeeOptions(incoming())
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isVerified()
+        && settingId == 'coffeeOptions'
+        && isValidCoffeeOptions(incoming())
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow delete: if false;
+    }
+
+    // /menu/{itemId}
+    match /menu/{itemId} {
+      allow get: if isValidId(itemId) && (isAdmin() || ('inStock' in existing() && existing().inStock == true));
+      allow list: if isBootstrappedAdmin() || ('inStock' in resource.data && resource.data.inStock == true);
+      allow create: if isVerified()
+        && isValidId(itemId)
+        && isValidMenuItem(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isVerified()
+        && isValidId(itemId)
+        && isValidMenuItem(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'nameAr', 'category', 'price', 'description', 'descriptionAr', 'inStock', 'imageUrl', 'storagePath', 'allowMilkOption', 'coconutMilkPrice', 'allowTemperature', 'updatedAt'])
+        && isAdmin();
+      allow delete: if isVerified() && isValidId(itemId) && isAdmin();
+    }
+
+    // /billboards/{billboardId}
+    match /billboards/{billboardId} {
+      allow get: if isValidId(billboardId) && (isAdmin() || ('isActive' in existing() && existing().isActive == true));
+      allow list: if isBootstrappedAdmin() || ('isActive' in resource.data && resource.data.isActive == true);
+      allow create: if isVerified()
+        && isValidId(billboardId)
+        && isValidBillboard(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && isAdmin();
+      allow update: if isVerified()
+        && isValidId(billboardId)
+        && isValidBillboard(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'mediaType', 'mediaUrl', 'storagePath', 'isActive', 'updatedAt'])
+        && isAdmin();
+      allow delete: if isVerified() && isValidId(billboardId) && isAdmin();
+    }
+
+    // /orders/{orderId}
+    match /orders/{orderId} {
+      allow get: if isVerified() && isValidId(orderId) && (isAdmin() || ('customerUid' in existing() && existing().customerUid == request.auth.uid));
+      allow list: if isVerified() && (isAdmin() || isBootstrappedAdmin() || ('customerUid' in resource.data && resource.data.customerUid == request.auth.uid));
+      allow create: if isVerified()
+        && isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().customerUid == request.auth.uid
+        && incoming().status == 'Pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isVerified()
+        && isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().customerUid == existing().customerUid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+        && isAdmin();
+      allow delete: if isVerified() && isValidId(orderId) && isAdmin();
+    }
+
+    // /admins/{adminUid}
+    match /admins/{adminUid} {
+      allow get: if isVerified() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isVerified()
+        && isValidId(adminUid)
+        && isValidAdminUser(incoming())
+        && incoming().createdAt == request.time
+        && isBootstrappedAdmin();
+      allow update: if isVerified()
+        && isValidId(adminUid)
+        && isValidAdminUser(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'displayName'])
+        && isBootstrappedAdmin();
+      allow delete: if isVerified() && isValidId(adminUid) && isBootstrappedAdmin();
+    }
+
+    // /mediaAssets/{assetId}
+    match /mediaAssets/{assetId} {
+      allow get: if isValidId(assetId) && (isAdmin() || ('isPublic' in existing() && existing().isPublic == true));
+      allow list: if isBootstrappedAdmin() || ('isPublic' in resource.data && resource.data.isPublic == true);
+      allow create: if isVerified()
+        && isValidId(assetId)
+        && isValidMediaAsset(incoming())
+        && incoming().createdAt == request.time
+        && isAdmin();
+      allow update: if false;
+      allow delete: if isVerified() && isValidId(assetId) && isAdmin();
+
+      // /mediaAssets/{assetId}/chunks/{chunkId}
+      match /chunks/{chunkId} {
+        allow get: if isValidId(assetId)
+          && isValidId(chunkId)
+          && (get(/databases/$(database)/documents/mediaAssets/$(assetId)).data.isPublic == true || isAdmin());
+        allow list: if false;
+        allow create: if isVerified()
+          && isValidId(assetId)
+          && isValidId(chunkId)
+          && exists(/databases/$(database)/documents/mediaAssets/$(assetId))
+          && isValidMediaChunk(incoming())
+          && incoming().createdAt == request.time
+          && isAdmin();
+        allow update: if false;
+        allow delete: if isVerified() && isValidId(assetId) && isValidId(chunkId) && isAdmin();
+      }
+    }
+  }
+}

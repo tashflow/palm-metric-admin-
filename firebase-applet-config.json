@@ -1,0 +1,10 @@
+{
+  "projectId": "palm-metric-app",
+  "appId": "1:522581928710:web:993ecee99d938707fc8c87",
+  "apiKey": "AIzaSyBmmyvlE3GKl8PVc1LHNBZOsl_MkqCWPlo",
+  "authDomain": "palm-metric-app.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "palm-metric-app.firebasestorage.app",
+  "messagingSenderId": "522581928710",
+  "measurementId": "G-2JWQ84KMLT"
+}

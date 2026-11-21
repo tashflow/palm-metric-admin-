@@ -1,0 +1,362 @@
+{
+  "entities": {
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "A specialty coffee, matcha, cold drink, dessert, or food item on the menu.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Display name of the menu item."
+        },
+        "nameAr": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Optional Arabic display name of the menu item."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "description": "Dynamic menu category key managed via /categories."
+        },
+        "price": {
+          "type": "number",
+          "description": "Unit price in SAR (﷼)."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Short tasting notes or ingredient description."
+        },
+        "descriptionAr": {
+          "type": "string",
+          "maxLength": 400,
+          "description": "Optional Arabic description of the menu item."
+        },
+        "inStock": {
+          "type": "boolean",
+          "description": "Whether the item is currently available for customer ordering."
+        },
+        "imageUrl": {
+          "type": "string",
+          "maxLength": 2048,
+          "description": "Firebase Storage download URL for the item photograph."
+        },
+        "storagePath": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Firebase Storage object path for managing replacements and deletions."
+        },
+        "allowMilkOption": {
+          "type": "boolean",
+          "description": "Optional per-item override for enabling Regular/Coconut milk selection."
+        },
+        "coconutMilkPrice": {
+          "type": "number",
+          "description": "Optional per-item override for coconut milk extra charge in SAR."
+        },
+        "allowTemperature": {
+          "type": "boolean",
+          "description": "Optional per-item override for enabling Hot/Cold temperature selection."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-modified timestamp."
+        }
+      },
+      "required": [
+        "name",
+        "category",
+        "price",
+        "description",
+        "inStock",
+        "imageUrl",
+        "storagePath",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Admin-managed menu category with bilingual labels and default drink customization behavior.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "nameEn": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "nameAr": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "sortOrder": { "type": "integer" },
+        "isActive": { "type": "boolean" },
+        "allowMilkOption": { "type": "boolean" },
+        "allowTemperature": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["key", "nameEn", "nameAr", "sortOrder", "isActive", "allowMilkOption", "allowTemperature", "createdAt", "updatedAt"]
+    },
+    "CoffeeOptionsSettings": {
+      "title": "CoffeeOptionsSettings",
+      "description": "Store-wide coffee modifier configuration synced between Admin App and Customer Order App.",
+      "type": "object",
+      "properties": {
+        "milkSelectionEnabled": { "type": "boolean" },
+        "coconutMilkExtraPrice": { "type": "number" },
+        "hotColdSelectionEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["milkSelectionEnabled", "coconutMilkExtraPrice", "hotColdSelectionEnabled", "updatedAt"]
+    },
+    "BillboardAd": {
+      "title": "BillboardAd",
+      "description": "A promotional image poster or video asset displayed on the Customer App billboard slider.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Offer headline displayed on the billboard."
+        },
+        "mediaType": {
+          "type": "string",
+          "enum": ["image", "video"],
+          "description": "Type of promotional media uploaded to Firebase Storage."
+        },
+        "mediaUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "description": "Firebase Storage download URL for the poster image or promotional video."
+        },
+        "storagePath": {
+          "type": "string",
+          "maxLength": 512,
+          "description": "Firebase Storage object path."
+        },
+        "isActive": {
+          "type": "boolean",
+          "description": "Whether the offer is live on the customer storefront billboard."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-modified timestamp."
+        }
+      },
+      "required": [
+        "title",
+        "mediaType",
+        "mediaUrl",
+        "storagePath",
+        "isActive",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A live customer order synced between the Customer App and Admin Live Orders Dashboard.",
+      "type": "object",
+      "properties": {
+        "orderNumber": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Human-readable order identifier."
+        },
+        "customerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Authenticated user UID who placed the order."
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Customer display name."
+        },
+        "customerContact": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Table number or phone contact."
+        },
+        "items": {
+          "type": "array",
+          "description": "Line items with itemId, name, price, and quantity."
+        },
+        "totalBill": {
+          "type": "number",
+          "description": "Total order bill in USD."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pending", "Preparing", "Ready", "Completed"],
+          "description": "Current fulfillment status."
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 240,
+          "description": "Optional preparation notes."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-modified timestamp."
+        }
+      },
+      "required": [
+        "orderNumber",
+        "customerUid",
+        "customerName",
+        "customerContact",
+        "items",
+        "totalBill",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized admin record granting management privileges.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Admin email address."
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 80,
+          "description": "Admin display name."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["email", "displayName", "createdAt"]
+    },
+    "MediaAsset": {
+      "title": "MediaAsset",
+      "description": "Metadata and inline payload for uploaded images or chunked videos stored in Firestore when Firebase Storage is unavailable on Starter Tier.",
+      "type": "object",
+      "properties": {
+        "mimeType": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 100,
+          "description": "MIME type of the uploaded image or video."
+        },
+        "totalBytes": {
+          "type": "integer",
+          "description": "Total byte size of the stored asset."
+        },
+        "chunkCount": {
+          "type": "integer",
+          "description": "Number of chunks in /chunks subcollection (0 when stored in inlineData)."
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Whether storefront visitors may read this asset."
+        },
+        "inlineData": {
+          "type": "string",
+          "maxLength": 800000,
+          "description": "Base64 payload for compact media assets under 650 KB."
+        },
+        "createdBy": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Admin UID who uploaded the asset."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["mimeType", "totalBytes", "chunkCount", "isPublic", "createdBy", "createdAt"]
+    },
+    "MediaChunk": {
+      "title": "MediaChunk",
+      "description": "Sequential base64 chunk for larger uploaded media assets such as promotional videos.",
+      "type": "object",
+      "properties": {
+        "index": {
+          "type": "integer",
+          "description": "Zero-based chunk order index."
+        },
+        "data": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 800000,
+          "description": "Base64-encoded chunk slice."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        }
+      },
+      "required": ["index", "data", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/menu/{itemId}": {
+      "schema": { "$ref": "#/entities/MenuItem" },
+      "description": "Specialty coffee and food catalog items."
+    },
+    "/billboards/{billboardId}": {
+      "schema": { "$ref": "#/entities/BillboardAd" },
+      "description": "Promotional image and video ads for the Customer App billboard."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Customer orders tracked in real time."
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Admin authorization registry."
+    },
+    "/mediaAssets/{assetId}": {
+      "schema": { "$ref": "#/entities/MediaAsset" },
+      "description": "Uploaded menu images and promotional media stored in Firestore."
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Dynamic menu categories editable from the admin panel."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/CoffeeOptionsSettings" },
+      "description": "Store-wide coffee modifier options (coffeeOptions)."
+    },
+    "/mediaAssets/{assetId}/chunks/{chunkId}": {
+      "schema": { "$ref": "#/entities/MediaChunk" },
+      "description": "Chunked binary slices for larger promotional videos."
+    }
+  }
+}
