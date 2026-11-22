@@ -27,6 +27,7 @@ import { ResolvedImage } from './ResolvedMedia';
 import { CategoryManagerModal } from './CategoryManagerModal';
 import { CoffeeOptionsModal } from './CoffeeOptionsModal';
 import { FirestoreRulesNotice } from './FirestoreRulesNotice';
+import { ProductCustomizationsView } from './ProductCustomizationsView';
 import {
   OperationType,
   db,
@@ -42,6 +43,7 @@ import {
   DEFAULT_MENU_CATEGORIES,
   MenuCategory,
   MenuItem,
+  ProductCustomization,
   VALIDATION_LIMITS,
   formatPrice,
 } from '../types';
@@ -50,6 +52,7 @@ interface MenuManagerViewProps {
   menuItems: MenuItem[];
   categories: CategoryItem[];
   coffeeOptions: CoffeeOptionsSettings;
+  productCustomizations?: Record<string, ProductCustomization>;
   rulesUpdateRequired?: boolean;
   loading: boolean;
   createModalOpen: boolean;
@@ -99,6 +102,7 @@ export function MenuManagerView({
   menuItems,
   categories,
   coffeeOptions,
+  productCustomizations = {},
   rulesUpdateRequired = false,
   loading,
   createModalOpen,
@@ -107,6 +111,8 @@ export function MenuManagerView({
 }: MenuManagerViewProps) {
   const { lang, t, categoryLabel, localizedItemName, localizedItemDescription } =
     useLanguage();
+  const [workspaceMode, setWorkspaceMode] = useState<'catalog' | 'customizations'>('catalog');
+  const [customizeProductId, setCustomizeProductId] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<'All' | MenuCategory>('All');
   const [stockFilter, setStockFilter] = useState<'all' | 'inStock' | 'outOfStock'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -621,6 +627,10 @@ export function MenuManagerView({
     const displayName = localizedItemName(item);
     const displayDesc = localizedItemDescription(item);
     const resolvedMods = resolveItemModifiers(item, categories, coffeeOptions);
+    const customConfig = productCustomizations[item.id];
+    const activeCustomGroupCount = customConfig?.enabled
+      ? customConfig.groups.filter((g) => g.enabled).length
+      : 0;
     return (
       <article
         key={item.id}
@@ -669,20 +679,31 @@ export function MenuManagerView({
               >
                 {item.inStock ? t.inStock : t.outOfStock}
               </span>
-              {resolvedMods.milkEnabled && (
+              {customConfig?.enabled ? (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">
-                    {t.milkOptionLabel} (+{formatPrice(resolvedMods.coconutMilkPrice)})
+                  <span className="text-[#2C4435] font-medium tabular-nums">
+                    {t.customizationsActiveLabel} ({activeCustomGroupCount})
                   </span>
                 </>
-              )}
-              {resolvedMods.temperatureEnabled && (
+              ) : (
                 <>
-                  <span aria-hidden="true">·</span>
-                  <span>
-                    {t.tempHot}/{t.tempCold}
-                  </span>
+                  {resolvedMods.milkEnabled && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="tabular-nums">
+                        {t.milkOptionLabel} (+{formatPrice(resolvedMods.coconutMilkPrice)})
+                      </span>
+                    </>
+                  )}
+                  {resolvedMods.temperatureEnabled && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>
+                        {t.tempHot}/{t.tempCold}
+                      </span>
+                    </>
+                  )}
                 </>
               )}
             </div>
@@ -723,6 +744,18 @@ export function MenuManagerView({
           <div className="flex items-center gap-0.5">
             <button
               type="button"
+              onClick={() => {
+                setCustomizeProductId(item.id);
+                setWorkspaceMode('customizations');
+              }}
+              title={t.customizeProductBtn}
+              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium text-[#2C4435] hover:bg-[#E8EFEA] transition-colors cursor-pointer"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t.customizeProductBtn}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => openDuplicateModal(item)}
               title={t.duplicateItem}
               aria-label={t.duplicateItem}
@@ -752,62 +785,99 @@ export function MenuManagerView({
     );
   };
 
+  const activeCustomizationsCount = useMemo(
+    () => Object.values(productCustomizations).filter((c) => c.enabled).length,
+    [productCustomizations]
+  );
+
   return (
     <div className="space-y-5">
       {rulesUpdateRequired && <FirestoreRulesNotice />}
 
-      {/* Configuration Bar: Categories + Coffee & Milk Options */}
-      <div className="bg-white border border-[#E1E5E0] rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="text-xs text-[#4A584F] flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span>
-            {t.milkOptionLabel}:{' '}
-            <strong className="text-[#162019]">
-              {coffeeOptions.milkSelectionEnabled ? t.modeEnabled : t.modeDisabled}
-            </strong>
-          </span>
-          <span className="text-[#C7CEC9]" aria-hidden="true">·</span>
-          <span>
-            {t.milkCoconut}:{' '}
-            <strong className="font-mono tabular-nums text-[#2C4435]">
-              +{formatPrice(coffeeOptions.coconutMilkExtraPrice)}
-            </strong>
-          </span>
-          <span className="text-[#C7CEC9]" aria-hidden="true">·</span>
-          <span>
-            {t.tempHot} / {t.tempCold}:{' '}
-            <strong className="text-[#162019]">
-              {coffeeOptions.hotColdSelectionEnabled ? t.modeEnabled : t.modeDisabled}
-            </strong>
-          </span>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+      {/* Mode Switcher + Quick Configuration Bar */}
+      <div className="bg-white border border-[#E1E5E0] rounded-xl px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center p-0.5 rounded-xl border border-[#E1E5E0] bg-[#F5F6F4]">
             <button
               type="button"
-              onClick={() => setGroupByCategory(true)}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                groupByCategory
+              onClick={() => setWorkspaceMode('catalog')}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                workspaceMode === 'catalog'
                   ? 'bg-white text-[#162019] shadow-xs'
-                  : 'text-[#6B786F] hover:text-[#162019]'
+                  : 'text-[#4A584F] hover:text-[#162019]'
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span>{t.groupByCategory}</span>
+              <Coffee className="w-3.5 h-3.5 text-[#2C4435]" />
+              <span>{t.menuCatalogTab}</span>
             </button>
             <button
               type="button"
-              onClick={() => setGroupByCategory(false)}
-              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                !groupByCategory
+              onClick={() => {
+                if (!customizeProductId && menuItems.length > 0) {
+                  setCustomizeProductId(menuItems[0].id);
+                }
+                setWorkspaceMode('customizations');
+              }}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                workspaceMode === 'customizations'
                   ? 'bg-white text-[#162019] shadow-xs'
-                  : 'text-[#6B786F] hover:text-[#162019]'
+                  : 'text-[#4A584F] hover:text-[#162019]'
               }`}
             >
-              <LayoutGrid className="w-3.5 h-3.5" />
-              <span>{t.flatGridView}</span>
+              <SlidersHorizontal className="w-3.5 h-3.5 text-[#2C4435]" />
+              <span>{t.productCustomizationsTab}</span>
+              <span className="font-mono text-[11px] text-[#2C4435] tabular-nums">
+                ({activeCustomizationsCount})
+              </span>
             </button>
           </div>
+
+          <div className="text-xs text-[#4A584F] hidden sm:flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              {t.milkOptionLabel}:{' '}
+              <strong className="text-[#162019]">
+                {coffeeOptions.milkSelectionEnabled ? t.modeEnabled : t.modeDisabled}
+              </strong>
+            </span>
+            <span className="text-[#C7CEC9]" aria-hidden="true">·</span>
+            <span>
+              {t.milkCoconut}:{' '}
+              <strong className="font-mono tabular-nums text-[#2C4435]">
+                +{formatPrice(coffeeOptions.coconutMilkExtraPrice)}
+              </strong>
+            </span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {workspaceMode === 'catalog' && (
+            <div className="inline-flex items-center p-0.5 rounded-xl border border-[#E1E5E0] bg-[#F5F6F4]">
+              <button
+                type="button"
+                onClick={() => setGroupByCategory(true)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                  groupByCategory
+                    ? 'bg-white text-[#162019] shadow-xs'
+                    : 'text-[#6B786F] hover:text-[#162019]'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{t.groupByCategory}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupByCategory(false)}
+                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                  !groupByCategory
+                    ? 'bg-white text-[#162019] shadow-xs'
+                    : 'text-[#6B786F] hover:text-[#162019]'
+                }`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>{t.flatGridView}</span>
+              </button>
+            </div>
+          )}
 
           <button
             type="button"
@@ -830,6 +900,19 @@ export function MenuManagerView({
           </button>
         </div>
       </div>
+
+      {workspaceMode === 'customizations' ? (
+        <ProductCustomizationsView
+          menuItems={menuItems}
+          categories={categories}
+          coffeeOptions={coffeeOptions}
+          customizationsMap={productCustomizations}
+          initialProductId={customizeProductId}
+          rulesUpdateRequired={rulesUpdateRequired}
+          loading={loading}
+        />
+      ) : (
+        <>
 
       {/* Filter & Search Toolbar */}
       <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
@@ -1067,6 +1150,8 @@ export function MenuManagerView({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredItems.map((item) => renderMenuCard(item))}
         </div>
+      )}
+        </>
       )}
 
       {/* Add / Edit Modal */}

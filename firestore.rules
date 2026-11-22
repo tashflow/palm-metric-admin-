@@ -24,20 +24,28 @@ service cloud.firestore {
     }
 
     function isVerified() {
-      return isSignedIn();
+      return isSignedIn() && (
+        ('firebase' in request.auth.token && 'sign_in_provider' in request.auth.token.firebase && request.auth.token.firebase.sign_in_provider == 'google.com') ||
+        ('email_verified' in request.auth.token && request.auth.token.email_verified == true)
+      );
     }
 
     function isBootstrappedAdmin() {
-      return isSignedIn() && (
+      return isVerified() && (
         request.auth.uid == 'jPgFPc8KbsXaPrdkyrbCQSFDMOP2' ||
-        ('email' in request.auth.token && request.auth.token.email is string && request.auth.token.email.lower() in ['tashflow26@gmail.com', 'palmmetric1@gmail.com']) ||
-        (request.auth.token.firebase.sign_in_provider is string)
+        (
+          'email' in request.auth.token &&
+          request.auth.token.email is string &&
+          'email_verified' in request.auth.token &&
+          request.auth.token.email_verified == true &&
+          request.auth.token.email.lower() in ['tashflow26@gmail.com', 'palmmetric1@gmail.com']
+        )
       );
     }
 
     function isAdmin() {
       return isBootstrappedAdmin() || (
-        isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
     }
 
@@ -140,6 +148,80 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function isValidCustomizationOption(opt) {
+      return opt is map
+        && opt.keys().hasAll(['id', 'name', 'nameAr', 'additionalPrice', 'enabled', 'isDefault', 'displayOrder'])
+        && opt.keys().hasOnly(['id', 'name', 'nameAr', 'additionalPrice', 'enabled', 'isDefault', 'displayOrder'])
+        && isValidId(opt.id) && opt.id.size() <= 60
+        && opt.name is string && opt.name.size() >= 1 && opt.name.size() <= 80
+        && opt.nameAr is string && opt.nameAr.size() >= 1 && opt.nameAr.size() <= 80
+        && opt.additionalPrice is number && opt.additionalPrice >= 0 && opt.additionalPrice <= 500
+        && opt.enabled is bool
+        && opt.isDefault is bool && (!opt.isDefault || opt.enabled)
+        && opt.displayOrder is int && opt.displayOrder >= 1 && opt.displayOrder <= 100;
+    }
+
+    function areValidCustomizationOptions(opts) {
+      return opts is list
+        && opts.size() >= 1
+        && opts.size() <= 10
+        && (opts.size() <= 0 || isValidCustomizationOption(opts[0]))
+        && (opts.size() <= 1 || isValidCustomizationOption(opts[1]))
+        && (opts.size() <= 2 || isValidCustomizationOption(opts[2]))
+        && (opts.size() <= 3 || isValidCustomizationOption(opts[3]))
+        && (opts.size() <= 4 || isValidCustomizationOption(opts[4]))
+        && (opts.size() <= 5 || isValidCustomizationOption(opts[5]))
+        && (opts.size() <= 6 || isValidCustomizationOption(opts[6]))
+        && (opts.size() <= 7 || isValidCustomizationOption(opts[7]))
+        && (opts.size() <= 8 || isValidCustomizationOption(opts[8]))
+        && (opts.size() <= 9 || isValidCustomizationOption(opts[9]));
+    }
+
+    function isValidCustomizationGroup(group) {
+      return group is map
+        && group.keys().hasAll(['id', 'name', 'nameAr', 'type', 'required', 'minSelections', 'maxSelections', 'displayOrder', 'enabled', 'options'])
+        && group.keys().hasOnly(['id', 'name', 'nameAr', 'type', 'required', 'minSelections', 'maxSelections', 'displayOrder', 'enabled', 'options'])
+        && isValidId(group.id) && group.id.size() <= 60
+        && group.name is string && group.name.size() >= 1 && group.name.size() <= 80
+        && group.nameAr is string && group.nameAr.size() >= 1 && group.nameAr.size() <= 80
+        && group.type is string && group.type in ['single', 'multiple']
+        && group.required is bool
+        && group.minSelections is int && group.minSelections >= 0 && group.minSelections <= 10
+        && group.maxSelections is int && group.maxSelections >= 1 && group.maxSelections <= 10
+        && group.minSelections <= group.maxSelections
+        && (group.type != 'single' || group.maxSelections == 1)
+        && (!group.required || group.minSelections >= 1)
+        && group.displayOrder is int && group.displayOrder >= 1 && group.displayOrder <= 100
+        && group.enabled is bool
+        && areValidCustomizationOptions(group.options);
+    }
+
+    function areValidCustomizationGroups(groups) {
+      return groups is list
+        && groups.size() >= 0
+        && groups.size() <= 8
+        && (groups.size() <= 0 || isValidCustomizationGroup(groups[0]))
+        && (groups.size() <= 1 || isValidCustomizationGroup(groups[1]))
+        && (groups.size() <= 2 || isValidCustomizationGroup(groups[2]))
+        && (groups.size() <= 3 || isValidCustomizationGroup(groups[3]))
+        && (groups.size() <= 4 || isValidCustomizationGroup(groups[4]))
+        && (groups.size() <= 5 || isValidCustomizationGroup(groups[5]))
+        && (groups.size() <= 6 || isValidCustomizationGroup(groups[6]))
+        && (groups.size() <= 7 || isValidCustomizationGroup(groups[7]));
+    }
+
+    function isValidProductCustomization(data, productId) {
+      return data.keys().hasAll(['productId', 'enabled', 'schemaVersion', 'allowSpecialInstructions', 'updatedBy', 'updatedAt', 'groups'])
+        && data.keys().hasOnly(['productId', 'enabled', 'schemaVersion', 'allowSpecialInstructions', 'updatedBy', 'updatedAt', 'groups'])
+        && data.productId is string && data.productId == productId
+        && data.enabled is bool
+        && data.schemaVersion is int && data.schemaVersion == 1
+        && data.allowSpecialInstructions is bool
+        && data.updatedBy is string && data.updatedBy == request.auth.uid && data.updatedBy.size() >= 1 && data.updatedBy.size() <= 128
+        && data.updatedAt is timestamp && data.updatedAt == request.time
+        && areValidCustomizationGroups(data.groups);
+    }
+
     // /categories/{categoryId}
     match /categories/{categoryId} {
       allow get: if isValidId(categoryId) && (isAdmin() || ('isActive' in existing() && existing().isActive == true));
@@ -217,10 +299,25 @@ service cloud.firestore {
       allow delete: if isVerified() && isValidId(billboardId) && isAdmin();
     }
 
+    // /productCustomizations/{productId}
+    match /productCustomizations/{productId} {
+      allow get: if isValidId(productId) && (isAdmin() || ('enabled' in existing() && existing().enabled == true));
+      allow list: if isAdmin() || ('enabled' in resource.data && resource.data.enabled == true);
+      allow create: if isVerified()
+        && isValidId(productId)
+        && isValidProductCustomization(incoming(), productId)
+        && isAdmin();
+      allow update: if isVerified()
+        && isValidId(productId)
+        && isValidProductCustomization(incoming(), productId)
+        && isAdmin();
+      allow delete: if isVerified() && isValidId(productId) && isAdmin();
+    }
+
     // /orders/{orderId}
     match /orders/{orderId} {
       allow get: if isVerified() && isValidId(orderId) && (isAdmin() || ('customerUid' in existing() && existing().customerUid == request.auth.uid));
-      allow list: if isVerified() && (isAdmin() || isBootstrappedAdmin() || ('customerUid' in resource.data && resource.data.customerUid == request.auth.uid));
+      allow list: if isVerified() && (isAdmin() || ('customerUid' in resource.data && resource.data.customerUid == request.auth.uid));
       allow create: if isVerified()
         && isValidId(orderId)
         && isValidOrder(incoming())

@@ -35,8 +35,8 @@ export function FirestoreRulesNotice({ compact = false }: FirestoreRulesNoticePr
         {!compact && (
           <p className="leading-relaxed">
             {lang === 'ar'
-              ? 'لحفظ الفئات المخصصة وإعدادات القهوة والحليب، انسخ قواعد الأمان المحدّثة والصقها ثم اضغط Publish في Firebase Console → Firestore Database → Rules.'
-              : 'To save custom categories and coffee/milk settings, copy the updated rules, paste them into Firebase Console → Firestore Database → Rules, and click Publish.'}
+              ? 'لحفظ الفئات المخصصة، وتخصيص المنتجات (productCustomizations)، وإعدادات القهوة، راجع قواعد الأمان المحدّثة وانسخها والصقها ثم اضغط Publish في Firebase Console → Firestore Database → Rules.'
+              : 'To save custom categories, product customizations (productCustomizations), and coffee/milk settings, review and copy the updated security rules, paste them into Firebase Console → Firestore Database → Rules, and click Publish.'}
           </p>
         )}
       </div>

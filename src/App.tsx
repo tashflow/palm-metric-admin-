@@ -16,6 +16,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { DEFAULT_CATEGORIES, syncDefaultCategories, syncPalmMetricMenu } from './lib/defaultMenu';
 import { OperationType, db, handleFirestoreError } from './lib/firebase';
+import { sanitizeFirestoreCustomization } from './lib/productCustomizations';
 import {
   AdminTab,
   BillboardAd,
@@ -25,6 +26,7 @@ import {
   DEFAULT_COFFEE_OPTIONS,
   MenuItem,
   Order,
+  ProductCustomization,
 } from './types';
 import { AdminAccessModal } from './components/AdminAccessModal';
 import { BillboardManagerView } from './components/BillboardManagerView';
@@ -58,9 +60,14 @@ function AdminDashboard() {
   const [coffeeOptions, setCoffeeOptions] = useState<CoffeeOptionsSettings>(
     DEFAULT_COFFEE_OPTIONS
   );
+  const [productCustomizations, setProductCustomizations] = useState<
+    Record<string, ProductCustomization>
+  >({});
   const [categoriesRulesBlocked, setCategoriesRulesBlocked] = useState(false);
   const [coffeeOptionsRulesBlocked, setCoffeeOptionsRulesBlocked] = useState(false);
-  const rulesUpdateRequired = categoriesRulesBlocked || coffeeOptionsRulesBlocked;
+  const [customizationsRulesBlocked, setCustomizationsRulesBlocked] = useState(false);
+  const rulesUpdateRequired =
+    categoriesRulesBlocked || coffeeOptionsRulesBlocked || customizationsRulesBlocked;
 
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [menuLoading, setMenuLoading] = useState(true);
@@ -228,12 +235,35 @@ function AdminDashboard() {
       }
     );
 
+    const unsubCustomizations = onSnapshot(
+      collection(db, 'productCustomizations'),
+      (snapshot) => {
+        setCustomizationsRulesBlocked(false);
+        const map: Record<string, ProductCustomization> = {};
+        for (const d of snapshot.docs) {
+          map[d.id] = sanitizeFirestoreCustomization(
+            d.id,
+            d.data() as Record<string, unknown>
+          );
+        }
+        setProductCustomizations(map);
+      },
+      (error) => {
+        if ((error as { code?: string })?.code === 'permission-denied') {
+          setCustomizationsRulesBlocked(true);
+          return;
+        }
+        handleFirestoreError(error, OperationType.LIST, 'productCustomizations');
+      }
+    );
+
     return () => {
       unsubOrders();
       unsubMenu();
       unsubBillboards();
       unsubCategories();
       unsubCoffeeOptions();
+      unsubCustomizations();
     };
   }, [authLoading, user, isAdmin, setDynamicCategories]);
 
@@ -618,6 +648,7 @@ function AdminDashboard() {
               menuItems={menuItems}
               categories={categories}
               coffeeOptions={coffeeOptions}
+              productCustomizations={productCustomizations}
               rulesUpdateRequired={rulesUpdateRequired}
               loading={menuLoading}
               createModalOpen={menuCreateModalOpen}
@@ -642,6 +673,7 @@ function AdminDashboard() {
               menuItems={menuItems}
               categories={categories}
               coffeeOptions={coffeeOptions}
+              productCustomizations={productCustomizations}
               orders={orders}
               onOrderPlaced={() => selectTab('orders')}
             />

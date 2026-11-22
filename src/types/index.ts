@@ -93,6 +93,51 @@ export interface BillboardAd {
   updatedAt?: Timestamp | null;
 }
 
+export type CustomizationGroupType = 'single' | 'multiple';
+
+export interface CustomizationOption {
+  id: string;
+  name: string;
+  nameAr: string;
+  additionalPrice: number;
+  enabled: boolean;
+  isDefault: boolean;
+  displayOrder: number;
+}
+
+export interface CustomizationGroup {
+  id: string;
+  name: string;
+  nameAr: string;
+  type: CustomizationGroupType;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  displayOrder: number;
+  enabled: boolean;
+  options: CustomizationOption[];
+}
+
+export interface ProductCustomization {
+  productId: string;
+  enabled: boolean;
+  schemaVersion: number;
+  allowSpecialInstructions: boolean;
+  updatedBy: string;
+  updatedAt?: Timestamp | null;
+  groups: CustomizationGroup[];
+}
+
+export interface SelectedCustomizationOption {
+  groupId: string;
+  groupName: string;
+  groupNameAr?: string;
+  optionId: string;
+  optionName: string;
+  optionNameAr?: string;
+  additionalPrice: number;
+}
+
 export interface OrderLineItem {
   itemId: string;
   name: string;
@@ -101,6 +146,8 @@ export interface OrderLineItem {
   milkOption?: MilkOption;
   milkExtraPrice?: number;
   temperature?: TemperatureOption;
+  selectedCustomizations?: SelectedCustomizationOption[];
+  specialInstructions?: string;
 }
 
 export interface Order {
@@ -143,5 +190,16 @@ export const VALIDATION_LIMITS = {
     notesMaxLength: 240,
     maxItems: 50,
     orderNumberPattern: /^[a-zA-Z0-9_-]+$/,
+  },
+  productCustomization: {
+    productIdMaxLength: 128,
+    idMaxLength: 60,
+    nameMaxLength: 80,
+    maxGroups: 8,
+    maxOptionsPerGroup: 10,
+    maxAdditionalPrice: 500,
+    maxDisplayOrder: 100,
+    specialInstructionsMaxLength: 240,
+    idPattern: /^[a-zA-Z0-9_-]+$/,
   },
 } as const;

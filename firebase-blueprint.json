@@ -323,6 +323,60 @@
         }
       },
       "required": ["index", "data", "createdAt"]
+    },
+    "CustomizationOption": {
+      "title": "CustomizationOption",
+      "description": "An individual bilingual choice inside a product customization group with optional SAR surcharge.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nameAr": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "additionalPrice": { "type": "number" },
+        "enabled": { "type": "boolean" },
+        "isDefault": { "type": "boolean" },
+        "displayOrder": { "type": "integer" }
+      },
+      "required": ["id", "name", "nameAr", "additionalPrice", "enabled", "isDefault", "displayOrder"]
+    },
+    "CustomizationGroup": {
+      "title": "CustomizationGroup",
+      "description": "A single-choice or multiple-choice selection group with min/max bounds.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "nameAr": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "enum": ["single", "multiple"] },
+        "required": { "type": "boolean" },
+        "minSelections": { "type": "integer" },
+        "maxSelections": { "type": "integer" },
+        "displayOrder": { "type": "integer" },
+        "enabled": { "type": "boolean" },
+        "options": {
+          "type": "array",
+          "items": { "$ref": "#/entities/CustomizationOption" }
+        }
+      },
+      "required": ["id", "name", "nameAr", "type", "required", "minSelections", "maxSelections", "displayOrder", "enabled", "options"]
+    },
+    "ProductCustomization": {
+      "title": "ProductCustomization",
+      "description": "Admin-controlled per-product customization configuration consumed in real time by the Customer App.",
+      "type": "object",
+      "properties": {
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "enabled": { "type": "boolean" },
+        "schemaVersion": { "type": "integer" },
+        "allowSpecialInstructions": { "type": "boolean" },
+        "updatedBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/entities/CustomizationGroup" }
+        }
+      },
+      "required": ["productId", "enabled", "schemaVersion", "allowSpecialInstructions", "updatedBy", "updatedAt", "groups"]
     }
   },
   "firestore": {
@@ -357,6 +411,10 @@
     "/mediaAssets/{assetId}/chunks/{chunkId}": {
       "schema": { "$ref": "#/entities/MediaChunk" },
       "description": "Chunked binary slices for larger promotional videos."
+    },
+    "/productCustomizations/{productId}": {
+      "schema": { "$ref": "#/entities/ProductCustomization" },
+      "description": "Stage 04B per-product customization groups, SAR add-on pricing, and special instruction settings."
     }
   }
 }

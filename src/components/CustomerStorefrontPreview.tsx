@@ -19,6 +19,12 @@ import {
   resolveItemModifiers,
 } from '../lib/modifiers';
 import {
+  calculateCustomizationExtraPrice,
+  getInitialSelectionsForCustomization,
+  resolveSelectedCustomizationOptions,
+  validateCustomerSelection,
+} from '../lib/productCustomizations';
+import {
   BillboardAd,
   CUSTOMER_APP_DOMAIN,
   CUSTOMER_APP_URL,
@@ -30,6 +36,8 @@ import {
   ORDER_STATUSES,
   Order,
   OrderLineItem,
+  ProductCustomization,
+  SelectedCustomizationOption,
   TemperatureOption,
   VALIDATION_LIMITS,
   formatPrice,
@@ -40,6 +48,7 @@ interface CustomerStorefrontPreviewProps {
   menuItems: MenuItem[];
   categories: CategoryItem[];
   coffeeOptions: CoffeeOptionsSettings;
+  productCustomizations?: Record<string, ProductCustomization>;
   orders: Order[];
   onOrderPlaced: () => void;
 }
@@ -55,6 +64,8 @@ interface CartEntry {
   milkOption?: MilkOption;
   milkExtraPrice?: number;
   temperature?: TemperatureOption;
+  selectedCustomizations?: SelectedCustomizationOption[];
+  specialInstructions?: string;
 }
 
 interface ItemSelectionState {
@@ -77,6 +88,7 @@ export function CustomerStorefrontPreview({
   menuItems,
   categories,
   coffeeOptions,
+  productCustomizations = {},
   orders,
   onOrderPlaced,
 }: CustomerStorefrontPreviewProps) {
@@ -117,6 +129,10 @@ export function CustomerStorefrontPreview({
 
   const [slideIndex, setSlideIndex] = useState(0);
   const [selections, setSelections] = useState<Record<string, ItemSelectionState>>({});
+  const [customSelections, setCustomSelections] = useState<
+    Record<string, Record<string, string[]>>
+  >({});
+  const [itemInstructions, setItemInstructions] = useState<Record<string, string>>({});
   const [cart, setCart] = useState<Record<string, CartEntry>>({});
   const [customerName, setCustomerName] = useState('');
   const [customerContact, setCustomerContact] = useState('');
@@ -124,14 +140,6 @@ export function CustomerStorefrontPreview({
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastPlacedOrderId, setLastPlacedOrderId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (activeBillboards.length <= 1) return;
-    const timer = setInterval(() => {
-      setSlideIndex((prev) => (prev + 1) % activeBillboards.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [activeBillboards.length]);
 
   useEffect(() => {
     if (activeBillboards.length <= 1) return;
@@ -182,7 +190,92 @@ export function CustomerStorefrontPreview({
     [orders, user]
   );
 
+  const getCustomSelectionForItem = (
+    item: MenuItem,
+    cfg: ProductCustomization
+  ): Record<string, string[]> => {
+    if (customSelections[item.id]) return customSelections[item.id];
+    return getInitialSelectionsForCustomization(cfg);
+  };
+
+  const toggleCustomOption = (
+    item: MenuItem,
+    cfg: ProductCustomization,
+    groupId: string,
+    optionId: string
+  ) => {
+    setError(null);
+    const group = cfg.groups.find((g) => g.id === groupId);
+    if (!group) return;
+    setCustomSelections((prev) => {
+      const itemSel = prev[item.id] || getInitialSelectionsForCustomization(cfg);
+      const current = itemSel[groupId] || [];
+      let nextGroupSel: string[];
+      if (group.type === 'single') {
+        if (current[0] === optionId && !group.required && group.minSelections === 0) {
+          nextGroupSel = [];
+        } else {
+          nextGroupSel = [optionId];
+        }
+      } else if (current.includes(optionId)) {
+        nextGroupSel = current.filter((id) => id !== optionId);
+      } else if (current.length >= group.maxSelections) {
+        return prev;
+      } else {
+        nextGroupSel = [...current, optionId];
+      }
+      return {
+        ...prev,
+        [item.id]: {
+          ...itemSel,
+          [groupId]: nextGroupSel,
+        },
+      };
+    });
+  };
+
   const addConfiguredItemToCart = (item: MenuItem) => {
+    const customCfg = productCustomizations[item.id];
+    if (customCfg?.enabled) {
+      const selectedMap = getCustomSelectionForItem(item, customCfg);
+      const validation = validateCustomerSelection(customCfg, selectedMap);
+      if (!validation.valid) {
+        const firstErr = validation.errorMessages[0];
+        setError(firstErr ? (lang === 'ar' ? firstErr.ar : firstErr.en) : null);
+        return;
+      }
+      setError(null);
+      const resolvedCustom = resolveSelectedCustomizationOptions(customCfg, selectedMap);
+      const extraPrice = calculateCustomizationExtraPrice(customCfg, selectedMap);
+      const unitPrice = Number((item.price + extraPrice).toFixed(2));
+      const trimmedInstr = customCfg.allowSpecialInstructions
+        ? (itemInstructions[item.id] || '').trim()
+        : '';
+      const optionSignature = resolvedCustom
+        .map((s) => `${s.groupId}:${s.optionId}`)
+        .join('|');
+      const key = `${item.id}::custom::${optionSignature}::${trimmedInstr}`;
+
+      setCart((prev) => {
+        const existing = prev[key];
+        return {
+          ...prev,
+          [key]: {
+            key,
+            itemId: item.id,
+            name: item.name,
+            ...(item.nameAr ? { nameAr: item.nameAr } : {}),
+            basePrice: item.price,
+            price: unitPrice,
+            quantity: (existing?.quantity || 0) + 1,
+            ...(resolvedCustom.length > 0 ? { selectedCustomizations: resolvedCustom } : {}),
+            ...(trimmedInstr ? { specialInstructions: trimmedInstr } : {}),
+          },
+        };
+      });
+      return;
+    }
+
     const resolved = resolveItemModifiers(item, categories, coffeeOptions);
     const sel = getSelectionForItem(item);
     const temperature = resolved.temperatureEnabled ? sel.temperature : undefined;
@@ -293,6 +386,12 @@ export function CustomerStorefrontPreview({
         ...(entry.milkOption ? { milkOption: entry.milkOption } : {}),
         ...(entry.milkExtraPrice ? { milkExtraPrice: entry.milkExtraPrice } : {}),
         ...(entry.temperature ? { temperature: entry.temperature } : {}),
+        ...(entry.selectedCustomizations && entry.selectedCustomizations.length > 0
+          ? { selectedCustomizations: entry.selectedCustomizations }
+          : {}),
+        ...(entry.specialInstructions
+          ? { specialInstructions: entry.specialInstructions }
+          : {}),
       }));
 
     const orderNumber = `PM-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -461,12 +560,19 @@ export function CustomerStorefrontPreview({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {availableMenu.map((item) => {
                 const displayName = localizedItemName(item);
+                const customCfg = productCustomizations[item.id];
+                const usesStage04Custom = Boolean(customCfg?.enabled);
+                const selectedCustomMap = usesStage04Custom
+                  ? getCustomSelectionForItem(item, customCfg!)
+                  : {};
                 const resolved = resolveItemModifiers(item, categories, coffeeOptions);
                 const sel = getSelectionForItem(item);
-                const extraPrice = resolved.milkEnabled
+                const extraPrice = usesStage04Custom
+                  ? calculateCustomizationExtraPrice(customCfg!, selectedCustomMap)
+                  : resolved.milkEnabled
                   ? getMilkExtraPrice(sel.milkOption, resolved.coconutMilkPrice)
                   : 0;
-                const effectivePrice = item.price + extraPrice;
+                const effectivePrice = Number((item.price + extraPrice).toFixed(2));
                 const itemCountInCart = cartEntries
                   .filter((e) => e.itemId === item.id)
                   .reduce((sum, e) => sum + e.quantity, 0);
@@ -518,72 +624,156 @@ export function CustomerStorefrontPreview({
                       </button>
                     </div>
 
-                    {(resolved.temperatureEnabled || resolved.milkEnabled) && (
-                      <div className="pt-2.5 border-t border-[#E1E5E0] space-y-2">
-                        {resolved.temperatureEnabled && (
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-medium text-[#6B786F]">
-                              {t.temperatureLabel}
-                            </span>
-                            <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-[#F5F6F4] border border-[#E1E5E0]">
-                              {(['Hot', 'Cold'] as const).map((temp) => (
-                                <button
-                                  key={temp}
-                                  type="button"
-                                  onClick={() =>
-                                    setItemSelection(item, { temperature: temp })
-                                  }
-                                  className={`px-2 py-0.5 rounded-md text-[11px] font-medium cursor-pointer transition-colors ${
-                                    sel.temperature === temp
-                                      ? 'bg-[#2C4435] text-white'
-                                      : 'text-[#4A584F] hover:text-[#162019]'
-                                  }`}
-                                >
-                                  {temp === 'Hot' ? t.tempHot : t.tempCold}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                    {usesStage04Custom && customCfg ? (
+                      <div className="pt-2.5 border-t border-[#E1E5E0] space-y-2.5">
+                        {[...customCfg.groups]
+                          .filter((g) => g.enabled)
+                          .sort((a, b) => a.displayOrder - b.displayOrder)
+                          .map((group) => {
+                            const chosen = selectedCustomMap[group.id] || [];
+                            const groupLabel =
+                              lang === 'ar'
+                                ? group.nameAr || group.name
+                                : group.name || group.nameAr;
+                            return (
+                              <div key={group.id} className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px]">
+                                  <span className="font-medium text-[#39463D]">
+                                    {groupLabel}
+                                  </span>
+                                  <span className="text-[#6B786F]">
+                                    {group.required
+                                      ? t.requiredGroupLabel
+                                      : t.optionalGroupLabel}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {[...group.options]
+                                    .filter((o) => o.enabled)
+                                    .sort((a, b) => a.displayOrder - b.displayOrder)
+                                    .map((opt) => {
+                                      const active = chosen.includes(opt.id);
+                                      const optLabel =
+                                        lang === 'ar'
+                                          ? opt.nameAr || opt.name
+                                          : opt.name || opt.nameAr;
+                                      return (
+                                        <button
+                                          key={opt.id}
+                                          type="button"
+                                          onClick={() =>
+                                            toggleCustomOption(
+                                              item,
+                                              customCfg,
+                                              group.id,
+                                              opt.id
+                                            )
+                                          }
+                                          className={`px-2 py-1 rounded-md border text-[11px] font-medium cursor-pointer transition-colors ${
+                                            active
+                                              ? 'bg-[#2C4435] border-[#2C4435] text-white'
+                                              : 'bg-[#F5F6F4] border-[#E1E5E0] text-[#4A584F] hover:text-[#162019]'
+                                          }`}
+                                        >
+                                          {optLabel}
+                                          {opt.additionalPrice > 0
+                                            ? ` +${formatPrice(opt.additionalPrice)}`
+                                            : ''}
+                                        </button>
+                                      );
+                                    })}
+                                </div>
+                              </div>
+                            );
+                          })}
 
-                        {resolved.milkEnabled && (
-                          <div className="space-y-1">
-                            <span className="block text-[11px] font-medium text-[#6B786F]">
-                              {t.milkOptionLabel}
-                            </span>
-                            <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-[#F5F6F4] border border-[#E1E5E0]">
-                              {(
-                                [
-                                  { id: 'none', label: t.milkNone },
-                                  { id: 'regular', label: t.milkRegular },
-                                  {
-                                    id: 'coconut',
-                                    label:
-                                      resolved.coconutMilkPrice > 0
-                                        ? `${t.milkCoconut} +${formatPrice(resolved.coconutMilkPrice)}`
-                                        : t.milkCoconut,
-                                  },
-                                ] as const
-                              ).map((milk) => (
-                                <button
-                                  key={milk.id}
-                                  type="button"
-                                  onClick={() =>
-                                    setItemSelection(item, { milkOption: milk.id })
-                                  }
-                                  className={`px-1.5 py-1 rounded-md text-[11px] font-medium text-center leading-tight cursor-pointer transition-colors ${
-                                    sel.milkOption === milk.id
-                                      ? 'bg-[#2C4435] text-white'
-                                      : 'text-[#4A584F] hover:text-[#162019]'
-                                  }`}
-                                >
-                                  {milk.label}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
+                        {customCfg.allowSpecialInstructions && (
+                          <input
+                            type="text"
+                            maxLength={
+                              VALIDATION_LIMITS.productCustomization
+                                .specialInstructionsMaxLength
+                            }
+                            value={itemInstructions[item.id] || ''}
+                            onChange={(e) =>
+                              setItemInstructions((prev) => ({
+                                ...prev,
+                                [item.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={t.specialInstructionsPlaceholder}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-[#E1E5E0] bg-[#F9FAF8] text-[11px] text-[#162019] focus:outline-none focus:border-[#2C4435]"
+                          />
                         )}
                       </div>
+                    ) : (
+                      (resolved.temperatureEnabled || resolved.milkEnabled) && (
+                        <div className="pt-2.5 border-t border-[#E1E5E0] space-y-2">
+                          {resolved.temperatureEnabled && (
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[11px] font-medium text-[#6B786F]">
+                                {t.temperatureLabel}
+                              </span>
+                              <div className="inline-flex items-center gap-1 p-0.5 rounded-lg bg-[#F5F6F4] border border-[#E1E5E0]">
+                                {(['Hot', 'Cold'] as const).map((temp) => (
+                                  <button
+                                    key={temp}
+                                    type="button"
+                                    onClick={() =>
+                                      setItemSelection(item, { temperature: temp })
+                                    }
+                                    className={`px-2 py-0.5 rounded-md text-[11px] font-medium cursor-pointer transition-colors ${
+                                      sel.temperature === temp
+                                        ? 'bg-[#2C4435] text-white'
+                                        : 'text-[#4A584F] hover:text-[#162019]'
+                                    }`}
+                                  >
+                                    {temp === 'Hot' ? t.tempHot : t.tempCold}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {resolved.milkEnabled && (
+                            <div className="space-y-1">
+                              <span className="block text-[11px] font-medium text-[#6B786F]">
+                                {t.milkOptionLabel}
+                              </span>
+                              <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-[#F5F6F4] border border-[#E1E5E0]">
+                                {(
+                                  [
+                                    { id: 'none', label: t.milkNone },
+                                    { id: 'regular', label: t.milkRegular },
+                                    {
+                                      id: 'coconut',
+                                      label:
+                                        resolved.coconutMilkPrice > 0
+                                          ? `${t.milkCoconut} +${formatPrice(resolved.coconutMilkPrice)}`
+                                          : t.milkCoconut,
+                                    },
+                                  ] as const
+                                ).map((milk) => (
+                                  <button
+                                    key={milk.id}
+                                    type="button"
+                                    onClick={() =>
+                                      setItemSelection(item, { milkOption: milk.id })
+                                    }
+                                    className={`px-1.5 py-1 rounded-md text-[11px] font-medium text-center leading-tight cursor-pointer transition-colors ${
+                                      sel.milkOption === milk.id
+                                        ? 'bg-[#2C4435] text-white'
+                                        : 'text-[#4A584F] hover:text-[#162019]'
+                                    }`}
+                                  >
+                                    {milk.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
                     )}
                   </div>
                 );
@@ -645,11 +835,26 @@ export function CustomerStorefrontPreview({
                 <p className="text-xs text-[#6B786F]">{t.noItemsSelected}</p>
               ) : (
                 cartEntries.map((line) => {
-                  const modSummary = formatModifierSummary(
-                    line.temperature,
-                    line.milkOption,
-                    line.milkExtraPrice
-                  );
+                  const customSummary = line.selectedCustomizations?.length
+                    ? line.selectedCustomizations
+                        .map((sel) => {
+                          const label =
+                            lang === 'ar'
+                              ? sel.optionNameAr || sel.optionName
+                              : sel.optionName || sel.optionNameAr || '';
+                          return sel.additionalPrice > 0
+                            ? `${label} (+${formatPrice(sel.additionalPrice)})`
+                            : label;
+                        })
+                        .join(' · ')
+                    : '';
+                  const modSummary =
+                    customSummary ||
+                    formatModifierSummary(
+                      line.temperature,
+                      line.milkOption,
+                      line.milkExtraPrice
+                    );
                   return (
                     <div
                       key={line.key}
@@ -666,6 +871,11 @@ export function CustomerStorefrontPreview({
                         </p>
                         {modSummary && (
                           <p className="text-[11px] text-[#6B786F]">{modSummary}</p>
+                        )}
+                        {line.specialInstructions && (
+                          <p className="text-[11px] text-[#4A6B56]">
+                            {t.specialInstructionsPrefix} {line.specialInstructions}
+                          </p>
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">

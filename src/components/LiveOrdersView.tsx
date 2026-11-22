@@ -239,19 +239,35 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
                     <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-[#39463D]">
                       {order.items.map((item, idx) => {
                         const modifiers: string[] = [];
-                        if (item.temperature) {
-                          modifiers.push(item.temperature === 'Hot' ? t.tempHot : t.tempCold);
-                        }
-                        if (item.milkOption === 'regular') {
-                          modifiers.push(t.milkRegular);
-                        } else if (item.milkOption === 'coconut') {
-                          modifiers.push(
-                            item.milkExtraPrice && item.milkExtraPrice > 0
-                              ? `${t.milkCoconut} +${formatPrice(item.milkExtraPrice)}`
-                              : t.milkCoconut
-                          );
-                        } else if (item.milkOption === 'none') {
-                          modifiers.push(t.milkNone);
+                        if (item.selectedCustomizations && item.selectedCustomizations.length > 0) {
+                          for (const custom of item.selectedCustomizations) {
+                            const label =
+                              lang === 'ar'
+                                ? custom.optionNameAr || custom.optionName
+                                : custom.optionName || custom.optionNameAr || '';
+                            if (label) {
+                              modifiers.push(
+                                custom.additionalPrice > 0
+                                  ? `${label} +${formatPrice(custom.additionalPrice)}`
+                                  : label
+                              );
+                            }
+                          }
+                        } else {
+                          if (item.temperature) {
+                            modifiers.push(item.temperature === 'Hot' ? t.tempHot : t.tempCold);
+                          }
+                          if (item.milkOption === 'regular') {
+                            modifiers.push(t.milkRegular);
+                          } else if (item.milkOption === 'coconut') {
+                            modifiers.push(
+                              item.milkExtraPrice && item.milkExtraPrice > 0
+                                ? `${t.milkCoconut} +${formatPrice(item.milkExtraPrice)}`
+                                : t.milkCoconut
+                            );
+                          } else if (item.milkOption === 'none') {
+                            modifiers.push(t.milkNone);
+                          }
                         }
                         return (
                           <span key={`${order.id}-item-${idx}`} className="tabular-nums">
@@ -262,6 +278,11 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
                             {modifiers.length > 0 && (
                               <span className="text-xs text-[#2C4435] ms-1">
                                 · {modifiers.join(' · ')}
+                              </span>
+                            )}
+                            {item.specialInstructions && (
+                              <span className="text-xs text-[#4A6B56] ms-1">
+                                · {item.specialInstructions}
                               </span>
                             )}
                             <span className="text-xs text-[#6B786F] ms-1">
