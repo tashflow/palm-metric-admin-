@@ -200,19 +200,85 @@
           "type": "array",
           "description": "Line items with itemId, name, price, and quantity."
         },
+        "subtotal": {
+          "type": "number",
+          "description": "Verified subtotal in SAR before configured discounts and taxes."
+        },
+        "discountTotal": {
+          "type": "number",
+          "description": "Verified configured discount amount in SAR."
+        },
+        "taxTotal": {
+          "type": "number",
+          "description": "Verified configured tax amount in SAR."
+        },
         "totalBill": {
           "type": "number",
-          "description": "Total order bill in USD."
+          "description": "Authoritative total order bill in SAR."
+        },
+        "currency": {
+          "type": "string",
+          "enum": ["SAR"],
+          "description": "Order currency."
+        },
+        "orderType": {
+          "type": "string",
+          "enum": ["pickup"],
+          "description": "Pickup-only fulfillment type."
+        },
+        "paymentStatus": {
+          "type": "string",
+          "enum": ["unpaid", "pending", "paid", "pay_at_pickup"],
+          "description": "Payment state for the pickup order."
         },
         "status": {
           "type": "string",
-          "enum": ["Pending", "Preparing", "Ready", "Completed"],
+          "enum": ["Pending", "Preparing", "Ready", "Completed", "Cancelled"],
           "description": "Current fulfillment status."
         },
         "notes": {
           "type": "string",
           "maxLength": 240,
           "description": "Optional preparation notes."
+        },
+        "requestId": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Originating /orderRequests document ID when promoted by Admin."
+        },
+        "requestReference": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "Customer-facing REQ-... reference preserved from Stage 04K/04L."
+        },
+        "approvedBy": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Authenticated Admin UID who approved promotion."
+        },
+        "approvedByEmail": {
+          "type": "string",
+          "maxLength": 160,
+          "description": "Email of approving Admin."
+        },
+        "approvedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of Admin approval and promotion."
+        },
+        "pricingVersion": {
+          "type": "integer",
+          "description": "Authoritative pricing engine version."
+        },
+        "sourceApp": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Source application identifier."
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "maxLength": 128,
+          "description": "Idempotency key preventing duplicate official order creation."
         },
         "createdAt": {
           "type": "string",
@@ -377,6 +443,80 @@
         }
       },
       "required": ["productId", "enabled", "schemaVersion", "allowSpecialInstructions", "updatedBy", "updatedAt", "groups"]
+    },
+    "OrderRequest": {
+      "title": "OrderRequest",
+      "description": "Stage 04K/04L customer order request queued for Admin verification, authoritative SAR pricing, and atomic promotion to /orders.",
+      "type": "object",
+      "properties": {
+        "requestReference": { "type": "string", "minLength": 5, "maxLength": 32 },
+        "customerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "customerContact": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "pickupType": { "type": "string", "enum": ["pickup"] },
+        "pickupWindow": { "type": "string", "maxLength": 80 },
+        "items": { "type": "array", "description": "Requested menu items, quantities, and option IDs." },
+        "notes": { "type": "string", "maxLength": 300 },
+        "status": {
+          "type": "string",
+          "enum": ["pending_review", "under_review", "verified", "rejected", "order_created"]
+        },
+        "reviewStatus": {
+          "type": "string",
+          "enum": ["unreviewed", "in_review", "verified", "needs_attention", "approved", "rejected"]
+        },
+        "clientEstimatedTotal": { "type": "number" },
+        "verifiedPricing": { "type": "object" },
+        "verifiedItems": { "type": "array" },
+        "reviewedBy": { "type": "string", "maxLength": 128 },
+        "verifiedBy": { "type": "string", "maxLength": 128 },
+        "approvedOrderId": { "type": "string", "maxLength": 128 },
+        "approvedOrderNumber": { "type": "string", "maxLength": 32 },
+        "approvedBy": { "type": "string", "maxLength": 128 },
+        "rejectedBy": { "type": "string", "maxLength": 128 },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "auditTrail": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "requestReference",
+        "customerUid",
+        "customerName",
+        "customerContact",
+        "pickupType",
+        "items",
+        "status",
+        "reviewStatus",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "OrderRequestAuditLog": {
+      "title": "OrderRequestAuditLog",
+      "description": "Append-only Admin audit trail record for order request review, price verification, approval/promotion, and rejection.",
+      "type": "object",
+      "properties": {
+        "requestId": { "type": "string", "maxLength": 128 },
+        "requestReference": { "type": "string", "maxLength": 32 },
+        "action": {
+          "type": "string",
+          "enum": ["submitted", "start_review", "verify", "price_verified", "approve", "order_promoted", "reject"]
+        },
+        "actorUid": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 160 },
+        "actorRole": { "type": "string", "enum": ["admin", "customer", "system"] },
+        "fromStatus": { "type": "string" },
+        "toStatus": { "type": "string" },
+        "note": { "type": "string", "maxLength": 240 },
+        "rejectionReason": { "type": "string", "maxLength": 300 },
+        "approvedOrderId": { "type": "string", "maxLength": 128 },
+        "approvedOrderNumber": { "type": "string", "maxLength": 32 },
+        "verifiedTotalSar": { "type": "number" },
+        "createdAtIso": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["requestId", "requestReference", "action", "actorUid", "actorRole", "toStatus", "createdAtIso"]
     }
   },
   "firestore": {
@@ -390,7 +530,15 @@
     },
     "/orders/{orderId}": {
       "schema": { "$ref": "#/entities/Order" },
-      "description": "Customer orders tracked in real time."
+      "description": "Official customer orders promoted via Stage 04E/04L and tracked in real time."
+    },
+    "/orderRequests/{requestId}": {
+      "schema": { "$ref": "#/entities/OrderRequest" },
+      "description": "Customer order requests awaiting Admin verification, authoritative SAR pricing, and promotion or rejection."
+    },
+    "/orderRequests/{requestId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/OrderRequestAuditLog" },
+      "description": "Append-only Admin audit trail records for each order request."
     },
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminUser" },
@@ -406,7 +554,7 @@
     },
     "/settings/{settingId}": {
       "schema": { "$ref": "#/entities/CoffeeOptionsSettings" },
-      "description": "Store-wide coffee modifier options (coffeeOptions)."
+      "description": "Store-wide coffee modifier options (coffeeOptions) and optional pricing config (pricing)."
     },
     "/mediaAssets/{assetId}/chunks/{chunkId}": {
       "schema": { "$ref": "#/entities/MediaChunk" },

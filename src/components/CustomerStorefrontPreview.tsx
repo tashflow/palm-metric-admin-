@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import {
   ChevronLeft,
   ChevronRight,
@@ -18,6 +17,7 @@ import {
   getMilkExtraPrice,
   resolveItemModifiers,
 } from '../lib/modifiers';
+import { createCustomerOrderRequest } from '../lib/orderRequests';
 import {
   calculateCustomizationExtraPrice,
   getInitialSelectionsForCustomization,
@@ -35,7 +35,8 @@ import {
   MilkOption,
   ORDER_STATUSES,
   Order,
-  OrderLineItem,
+  OrderRequest,
+  OrderRequestItemInput,
   ProductCustomization,
   SelectedCustomizationOption,
   TemperatureOption,
@@ -50,7 +51,9 @@ interface CustomerStorefrontPreviewProps {
   coffeeOptions: CoffeeOptionsSettings;
   productCustomizations?: Record<string, ProductCustomization>;
   orders: Order[];
+  orderRequests?: OrderRequest[];
   onOrderPlaced: () => void;
+  onOrderRequestPlaced?: () => void;
 }
 
 interface CartEntry {
@@ -90,7 +93,9 @@ export function CustomerStorefrontPreview({
   coffeeOptions,
   productCustomizations = {},
   orders,
+  orderRequests = [],
   onOrderPlaced,
+  onOrderRequestPlaced,
 }: CustomerStorefrontPreviewProps) {
   const { user } = useAuth();
   const { lang, t, categoryLabel, statusLabel, localizedItemName } = useLanguage();
@@ -139,7 +144,7 @@ export function CustomerStorefrontPreview({
   const [notes, setNotes] = useState('');
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastPlacedOrderId, setLastPlacedOrderId] = useState<string | null>(null);
+  const [lastPlacedRequestRef, setLastPlacedRequestRef] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeBillboards.length <= 1) return;
@@ -182,6 +187,13 @@ export function CustomerStorefrontPreview({
   );
 
   const activeSlide = activeBillboards[slideIndex] || null;
+  const recentCustomerRequests = useMemo(
+    () =>
+      orderRequests
+        .filter((r) => !user || r.customerUid === user.uid)
+        .slice(0, 4),
+    [orderRequests, user]
+  );
   const recentCustomerOrders = useMemo(
     () =>
       orders
@@ -376,15 +388,16 @@ export function CustomerStorefrontPreview({
       return;
     }
 
-    const orderItems: OrderLineItem[] = cartEntries
-      .slice(0, VALIDATION_LIMITS.order.maxItems)
+    const requestItems: OrderRequestItemInput[] = cartEntries
+      .slice(0, VALIDATION_LIMITS.orderRequest.maxItems)
       .map((entry) => ({
         itemId: entry.itemId,
         name: entry.name,
-        price: entry.price,
+        ...(entry.nameAr ? { nameAr: entry.nameAr } : {}),
         quantity: entry.quantity,
+        submittedUnitPrice: entry.price,
+        submittedLineTotal: Number((entry.price * entry.quantity).toFixed(2)),
         ...(entry.milkOption ? { milkOption: entry.milkOption } : {}),
-        ...(entry.milkExtraPrice ? { milkExtraPrice: entry.milkExtraPrice } : {}),
         ...(entry.temperature ? { temperature: entry.temperature } : {}),
         ...(entry.selectedCustomizations && entry.selectedCustomizations.length > 0
           ? { selectedCustomizations: entry.selectedCustomizations }
@@ -394,23 +407,20 @@ export function CustomerStorefrontPreview({
           : {}),
       }));
 
-    const orderNumber = `PM-${Math.floor(1000 + Math.random() * 9000)}`;
     setPlacing(true);
     try {
-      const docRef = await addDoc(collection(db, 'orders'), {
-        orderNumber,
+      const created = await createCustomerOrderRequest(db, {
         customerUid: user.uid,
         customerName: nameTrimmed,
         customerContact: contactTrimmed,
-        items: orderItems,
-        totalBill: Number(totalBill.toFixed(2)),
-        status: 'Pending',
-        ...(notesTrimmed ? { notes: notesTrimmed } : {}),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        items: requestItems,
+        notes: notesTrimmed || undefined,
+        clientEstimatedTotal: Number(totalBill.toFixed(2)),
+        lang,
+        sourceApp: 'palm-metric-customer-preview',
       });
 
-      setLastPlacedOrderId(docRef.id);
+      setLastPlacedRequestRef(created.requestReference);
       setCart({});
       setCustomerName('');
       setCustomerContact('');
@@ -418,10 +428,10 @@ export function CustomerStorefrontPreview({
     } catch (err) {
       setError(
         lang === 'ar'
-          ? 'تعذر إرسال الطلب. تحقق من الاتصال وحاول مجدداً.'
-          : 'Unable to submit order. Check your connection and try again.'
+          ? 'تعذر إرسال طلب المراجعة. تحقق من نشر قواعد Firestore والمحاولة مجدداً.'
+          : 'Unable to submit order request. Check Firestore rules and try again.'
       );
-      handleFirestoreError(err, OperationType.CREATE, 'orders');
+      handleFirestoreError(err, OperationType.CREATE, 'orderRequests');
     } finally {
       setPlacing(false);
     }
@@ -917,22 +927,129 @@ export function CustomerStorefrontPreview({
               disabled={placing || cartEntries.length === 0}
               className="w-full py-2.5 px-4 rounded-xl bg-[#2C4435] hover:bg-[#223629] disabled:opacity-50 text-white text-xs font-medium transition-colors cursor-pointer"
             >
-              {placing ? t.sendingOrder : t.submitOrderKitchen}
+              {placing ? t.sendingRequestBtn : t.submitOrderRequestBtn}
             </button>
 
-            {lastPlacedOrderId && (
-              <div className="pt-1 flex items-center justify-between text-xs text-[#2C4435]">
-                <span>{t.orderSyncedMsg}</span>
+            {lastPlacedRequestRef && (
+              <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-[#2C4435]">
+                <span>
+                  {t.requestCreatedMsg}{' '}
+                  <strong dir="ltr" className="font-mono">
+                    {lastPlacedRequestRef}
+                  </strong>
+                </span>
                 <button
                   type="button"
-                  onClick={onOrderPlaced}
+                  onClick={() => (onOrderRequestPlaced ? onOrderRequestPlaced() : onOrderPlaced())}
                   className="font-medium underline cursor-pointer"
                 >
-                  {t.viewInLiveOrders}
+                  {t.openRequestsQueueBtn}
                 </button>
               </div>
             )}
           </form>
+
+          {/* Live Customer Request Lifecycle Tracker */}
+          {recentCustomerRequests.length > 0 && (
+            <div className="bg-white border border-[#E1E5E0] rounded-xl p-5 space-y-3">
+              <h4 className="font-display text-sm font-semibold text-[#162019]">
+                {t.requestTrackingTitle}
+              </h4>
+              <div className="space-y-4 divide-y divide-[#E1E5E0]">
+                {recentCustomerRequests.map((req) => {
+                  const linkedOrder = req.approvedOrderId
+                    ? orders.find((o) => o.id === req.approvedOrderId)
+                    : undefined;
+                  const stageIndex =
+                    req.status === 'pending_review'
+                      ? 0
+                      : req.status === 'under_review'
+                      ? 1
+                      : req.status === 'verified'
+                      ? 2
+                      : req.status === 'order_created'
+                      ? 3
+                      : -1;
+                  const steps = [
+                    t.stepSubmitted,
+                    t.stepAdminReview,
+                    t.stepVerified,
+                    t.stepOrderCreated,
+                  ];
+
+                  return (
+                    <div key={req.id} className="pt-3 first:pt-0 space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span dir="ltr" className="font-mono font-semibold text-[#162019]">
+                          {req.requestReference}
+                        </span>
+                        {req.status === 'rejected' ? (
+                          <span className="font-medium text-[#991B1B]">
+                            {t.filterRejected}
+                          </span>
+                        ) : req.status === 'order_created' && req.approvedOrderNumber ? (
+                          <span dir="ltr" className="font-mono font-semibold text-[#166534]">
+                            #{req.approvedOrderNumber}
+                          </span>
+                        ) : (
+                          <span className="font-medium text-[#2C4435]">
+                            {req.status === 'verified'
+                              ? t.filterVerified
+                              : req.status === 'under_review'
+                              ? t.filterUnderReview
+                              : t.filterPendingReview}
+                          </span>
+                        )}
+                      </div>
+
+                      {req.status === 'rejected' ? (
+                        <div className="p-2.5 rounded-lg bg-[#FEF2F2] border border-[#FECACA] text-[11px] text-[#991B1B]">
+                          {req.rejectionReason || t.rejectionReasonBannerTitle}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-4 gap-1">
+                          {steps.map((stepLabel, idx) => (
+                            <div key={`${req.id}-step-${idx}`} className="space-y-1">
+                              <div
+                                className={`h-1.5 rounded-full transition-colors ${
+                                  idx <= stageIndex ? 'bg-[#2C4435]' : 'bg-[#E1E5E0]'
+                                }`}
+                              />
+                              <p className="text-[10px] text-[#6B786F] truncate">{stepLabel}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {req.verifiedPricing && (
+                        <p className="text-[11px] text-[#4A584F] tabular-nums">
+                          {t.verifiedOrderTotalSar}:{' '}
+                          <span className="font-mono font-semibold text-[#162019]">
+                            {formatPrice(req.verifiedPricing.totalSar)}
+                          </span>
+                        </p>
+                      )}
+
+                      {linkedOrder && (
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-[#166534]">
+                          <span>
+                            {statusLabel(linkedOrder.status)} · #{linkedOrder.orderNumber}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={onOrderPlaced}
+                            className="font-medium underline cursor-pointer"
+                          >
+                            {t.viewInLiveOrders}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Live Customer Order Status Tracker */}
           {recentCustomerOrders.length > 0 && (

@@ -8,6 +8,7 @@ import { ORDER_STATUSES, Order, OrderStatus, formatPrice } from '../types';
 interface LiveOrdersViewProps {
   orders: Order[];
   loading: boolean;
+  highlightedOrderId?: string | null;
   onOpenCustomerPreview: () => void;
 }
 
@@ -16,9 +17,15 @@ const STATUS_BUTTON_STYLES: Record<OrderStatus, string> = {
   Preparing: 'bg-[#E0F2FE] border-[#38BDF8] text-[#075985]',
   Ready: 'bg-[#DCFCE7] border-[#4ADE80] text-[#166534]',
   Completed: 'bg-[#EEF2EF] border-[#94A39A] text-[#334139]',
+  Cancelled: 'bg-[#FEF2F2] border-[#FCA5A5] text-[#991B1B]',
 };
 
-export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveOrdersViewProps) {
+export function LiveOrdersView({
+  orders,
+  loading,
+  highlightedOrderId = null,
+  onOpenCustomerPreview,
+}: LiveOrdersViewProps) {
   const { lang, t, statusLabel, localizedItemName } = useLanguage();
   const [statusFilter, setStatusFilter] = useState<'All' | OrderStatus>('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,12 +54,18 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
       Preparing: 0,
       Ready: 0,
       Completed: 0,
+      Cancelled: 0,
     };
     for (const order of orders) {
       counts[order.status] = (counts[order.status] || 0) + 1;
     }
     return counts;
   }, [orders]);
+
+  const filterTabs: ('All' | OrderStatus)[] =
+    countsByStatus.Cancelled > 0
+      ? ['All', ...ORDER_STATUSES, 'Cancelled']
+      : ['All', ...ORDER_STATUSES];
 
   const filteredOrders = useMemo(() => {
     const queryLower = searchQuery.trim().toLowerCase();
@@ -61,12 +74,13 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
       if (!queryLower) return true;
       return (
         order.orderNumber.toLowerCase().includes(queryLower) ||
+        (order.requestReference || '').toLowerCase().includes(queryLower) ||
         order.customerName.toLowerCase().includes(queryLower) ||
         order.customerContact.toLowerCase().includes(queryLower) ||
         order.items.some(
           (item) =>
             item.name.toLowerCase().includes(queryLower) ||
-            localizedItemName({ id: item.itemId, name: item.name })
+            localizedItemName({ id: item.itemId, name: item.name, nameAr: item.nameAr })
               .toLowerCase()
               .includes(queryLower)
         )
@@ -112,7 +126,7 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
       {/* Filter & Search Toolbar */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <div className="flex items-center gap-1 p-1 bg-white border border-[#E1E5E0] rounded-xl overflow-x-auto">
-          {(['All', ...ORDER_STATUSES] as const).map((tab) => {
+          {filterTabs.map((tab) => {
             const active = statusFilter === tab;
             const label = tab === 'All' ? t.all : statusLabel(tab);
             return (
@@ -204,22 +218,40 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
                 ? ORDER_STATUSES[currentIndex + 1]
                 : null;
             const isUpdating = updatingId === order.id;
+            const isHighlighted = highlightedOrderId === order.id;
 
             return (
               <article
                 key={order.id}
-                className="bg-white border border-[#E1E5E0] rounded-xl p-4 sm:p-5 transition-colors hover:border-[#BFCAC2]"
+                className={`bg-white border rounded-xl p-4 sm:p-5 transition-colors ${
+                  isHighlighted
+                    ? 'border-[#2C4435] ring-2 ring-[#2C4435]/20'
+                    : 'border-[#E1E5E0] hover:border-[#BFCAC2]'
+                }`}
               >
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                   {/* Left/Start: Order Identity & Line Items */}
                   <div className="space-y-2.5 flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                       <span
                         dir="ltr"
                         className="font-mono text-sm font-semibold text-[#162019] tabular-nums"
                       >
                         #{order.orderNumber}
                       </span>
+                      {order.requestReference && (
+                        <span
+                          dir="ltr"
+                          className="px-1.5 py-0.5 rounded bg-[#E8EFEA] text-[#223629] font-mono text-[11px] font-medium"
+                        >
+                          {order.requestReference}
+                        </span>
+                      )}
+                      {order.orderType === 'pickup' && (
+                        <span className="px-1.5 py-0.5 rounded bg-[#F5F6F4] border border-[#E1E5E0] text-[11px] text-[#4A584F]">
+                          {t.pickupOnlyBadge}
+                        </span>
+                      )}
                       <span className="text-[#C7CEC9]" aria-hidden="true">·</span>
                       <span className="text-sm font-medium text-[#162019] truncate">
                         {order.customerName}
@@ -274,7 +306,11 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
                             <span className="font-mono font-semibold text-[#2C4435]">
                               {item.quantity}×
                             </span>{' '}
-                            {localizedItemName({ id: item.itemId, name: item.name })}
+                            {localizedItemName({
+                              id: item.itemId,
+                              name: item.name,
+                              nameAr: item.nameAr,
+                            })}
                             {modifiers.length > 0 && (
                               <span className="text-xs text-[#2C4435] ms-1">
                                 · {modifiers.join(' · ')}
@@ -329,6 +365,14 @@ export function LiveOrdersView({ orders, loading, onOpenCustomerPreview }: LiveO
                           </button>
                         );
                       })}
+
+                      {order.status === 'Cancelled' && (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs font-medium ${STATUS_BUTTON_STYLES.Cancelled}`}
+                        >
+                          {statusLabel('Cancelled')}
+                        </span>
+                      )}
 
                       {nextStatus && (
                         <button

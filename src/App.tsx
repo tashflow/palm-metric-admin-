@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
+  ClipboardCheck,
   ClipboardList,
   Coffee,
   ExternalLink,
@@ -16,6 +17,7 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
 import { DEFAULT_CATEGORIES, syncDefaultCategories, syncPalmMetricMenu } from './lib/defaultMenu';
 import { OperationType, db, handleFirestoreError } from './lib/firebase';
+import { subscribeAdminOrderRequests } from './lib/orderRequests';
 import { sanitizeFirestoreCustomization } from './lib/productCustomizations';
 import {
   AdminTab,
@@ -26,6 +28,8 @@ import {
   DEFAULT_COFFEE_OPTIONS,
   MenuItem,
   Order,
+  OrderRequest,
+  PricingConfigSettings,
   ProductCustomization,
 } from './types';
 import { AdminAccessModal } from './components/AdminAccessModal';
@@ -36,6 +40,7 @@ import { LanguageSwitcher } from './components/LanguageSwitcher';
 import { LiveOrdersView } from './components/LiveOrdersView';
 import { LoginScreen } from './components/LoginScreen';
 import { MenuManagerView } from './components/MenuManagerView';
+import { OrderRequestsView } from './components/OrderRequestsView';
 import { SummaryBar } from './components/SummaryBar';
 
 function AdminDashboard() {
@@ -45,12 +50,14 @@ function AdminDashboard() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const tabLabels: Record<AdminTab, string> = {
+    requests: t.tabRequests,
     orders: t.tabOrders,
     menu: t.tabMenu,
     billboard: t.tabBillboard,
     customer: t.tabCustomer,
   };
 
+  const [orderRequests, setOrderRequests] = useState<OrderRequest[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [billboards, setBillboards] = useState<BillboardAd[]>([]);
@@ -60,18 +67,22 @@ function AdminDashboard() {
   const [coffeeOptions, setCoffeeOptions] = useState<CoffeeOptionsSettings>(
     DEFAULT_COFFEE_OPTIONS
   );
+  const [pricingConfig, setPricingConfig] = useState<PricingConfigSettings | null>(null);
   const [productCustomizations, setProductCustomizations] = useState<
     Record<string, ProductCustomization>
   >({});
   const [categoriesRulesBlocked, setCategoriesRulesBlocked] = useState(false);
   const [coffeeOptionsRulesBlocked, setCoffeeOptionsRulesBlocked] = useState(false);
   const [customizationsRulesBlocked, setCustomizationsRulesBlocked] = useState(false);
+  const [requestsRulesBlocked, setRequestsRulesBlocked] = useState(false);
   const rulesUpdateRequired =
     categoriesRulesBlocked || coffeeOptionsRulesBlocked || customizationsRulesBlocked;
 
+  const [requestsLoading, setRequestsLoading] = useState(true);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [menuLoading, setMenuLoading] = useState(true);
   const [billboardsLoading, setBillboardsLoading] = useState(true);
+  const [highlightedOrderId, setHighlightedOrderId] = useState<string | null>(null);
 
   const [menuCreateModalOpen, setMenuCreateModalOpen] = useState(false);
   const [billboardCreateModalOpen, setBillboardCreateModalOpen] = useState(false);
@@ -85,9 +96,38 @@ function AdminDashboard() {
       return;
     }
 
+    setRequestsLoading(true);
     setOrdersLoading(true);
     setMenuLoading(true);
     setBillboardsLoading(true);
+
+    const unsubOrderRequests = subscribeAdminOrderRequests(
+      db,
+      (list) => {
+        setRequestsRulesBlocked(false);
+        setOrderRequests(list);
+        setRequestsLoading(false);
+      },
+      (error) => {
+        setRequestsLoading(false);
+        if ((error as { code?: string })?.code === 'permission-denied') {
+          setRequestsRulesBlocked(true);
+          return;
+        }
+        handleFirestoreError(error, OperationType.LIST, 'orderRequests');
+      }
+    );
+
+    const pricingConfigRef = doc(db, 'settings', 'pricing');
+    const unsubPricingConfig = onSnapshot(
+      pricingConfigRef,
+      (snapshot) => {
+        setPricingConfig(snapshot.exists() ? (snapshot.data() as PricingConfigSettings) : null);
+      },
+      () => {
+        setPricingConfig(null);
+      }
+    );
 
     const ordersQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
     const unsubOrders = onSnapshot(
@@ -258,6 +298,8 @@ function AdminDashboard() {
     );
 
     return () => {
+      unsubOrderRequests();
+      unsubPricingConfig();
       unsubOrders();
       unsubMenu();
       unsubBillboards();
@@ -266,6 +308,17 @@ function AdminDashboard() {
       unsubCustomizations();
     };
   }, [authLoading, user, isAdmin, setDynamicCategories]);
+
+  const pendingRequestCount = useMemo(
+    () =>
+      orderRequests.filter(
+        (req) =>
+          req.status === 'pending_review' ||
+          req.status === 'under_review' ||
+          req.status === 'verified'
+      ).length,
+    [orderRequests]
+  );
 
   const activeOrderCount = useMemo(
     () =>
@@ -329,7 +382,7 @@ function AdminDashboard() {
         </button>
       );
     }
-    if (activeTab === 'orders') {
+    if (activeTab === 'orders' || activeTab === 'requests') {
       return (
         <button
           type="button"
@@ -353,6 +406,7 @@ function AdminDashboard() {
   };
 
   const navItems: { id: AdminTab; label: string; icon: typeof ClipboardList; count?: number }[] = [
+    { id: 'requests', label: t.tabRequests, icon: ClipboardCheck, count: pendingRequestCount },
     { id: 'orders', label: t.tabOrders, icon: ClipboardList, count: activeOrderCount },
     { id: 'menu', label: t.tabMenu, icon: Coffee },
     { id: 'billboard', label: t.tabBillboard, icon: Megaphone },
@@ -610,7 +664,7 @@ function AdminDashboard() {
 
         {/* Mobile Quick Tab Strip */}
         <div className="md:hidden bg-white border-b border-[#E1E5E0] px-3 py-2 flex items-center gap-1 overflow-x-auto">
-          {(['orders', 'menu', 'billboard', 'customer'] as AdminTab[]).map((tab) => (
+          {(['requests', 'orders', 'menu', 'billboard', 'customer'] as AdminTab[]).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -635,10 +689,29 @@ function AdminDashboard() {
             />
           )}
 
+          {activeTab === 'requests' && (
+            <OrderRequestsView
+              requests={orderRequests}
+              loading={requestsLoading}
+              rulesBlocked={requestsRulesBlocked}
+              menuItems={menuItems}
+              categories={categories}
+              coffeeOptions={coffeeOptions}
+              productCustomizations={productCustomizations}
+              pricingConfig={pricingConfig}
+              onViewCreatedOrder={(orderId) => {
+                setHighlightedOrderId(orderId);
+                selectTab('orders');
+              }}
+              onOpenCustomerPreview={() => selectTab('customer')}
+            />
+          )}
+
           {activeTab === 'orders' && (
             <LiveOrdersView
               orders={orders}
               loading={ordersLoading}
+              highlightedOrderId={highlightedOrderId}
               onOpenCustomerPreview={() => selectTab('customer')}
             />
           )}
@@ -675,7 +748,9 @@ function AdminDashboard() {
               coffeeOptions={coffeeOptions}
               productCustomizations={productCustomizations}
               orders={orders}
+              orderRequests={orderRequests}
               onOrderPlaced={() => selectTab('orders')}
+              onOrderRequestPlaced={() => selectTab('requests')}
             />
           )}
         </main>
