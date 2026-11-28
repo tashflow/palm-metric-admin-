@@ -1,0 +1,129 @@
+{
+  "stage": "STAGE_04N.2.6",
+  "mode": "strict_read_only_customer_only",
+  "auditedAtUtc": "2026-11-27T16:28:00Z",
+  "workspaceInspected": "/app/applet",
+  "workspaceActualRole": "Palm Metric Admin App (Verda Admin — Specialty Coffee & Food Management)",
+  "liveCustomerWorkspaceAccessible": false,
+  "identityA": {
+    "status": "UNRESOLVED — SOURCE ARCHIVE NOT AVAILABLE",
+    "expectedFilename": "palm-metric-stage04n24-customer.zip",
+    "expectedFileCount": 143,
+    "expectedSizeBytes": 28158125,
+    "expectedSha256": "f98e56463fb29a00a78eb1b58dcc915dfa7394da65878fc93e6fc56b310dec88",
+    "presentOnDisk": false
+  },
+  "identityB": {
+    "status": "PRESENT_ON_DISK_EXTRACTED_VERIFIED",
+    "filename": "palm-metric-stage04n24-customer.zip",
+    "path": "/app/applet/palm-metric-stage04n24-customer.zip",
+    "fileCount": 108,
+    "sizeBytes": 28099225,
+    "sha256": "d01917c4c12146dd70d9c094e1efa9325d78fa7c4f6534438e31aba6f498f0a8",
+    "mtimeUtc": "2026-11-27T16:06:23.074625+00:00",
+    "extractionHashMismatches": 0,
+    "hasNodeModules": false,
+    "hasPackageLock": false,
+    "hasBunLock": true,
+    "keyExtractedFileSha256": {
+      "firebase-applet-config.json": "807ebb8e20e0aa82dcec5bf194ca433a4122f5e91a035325f7d5bb8720bf526c",
+      "firebase-blueprint.json": "8bf0d2a1c2693c3d4dceffc563ee50153f92ad5f60e7b88a91da0004767da2cf",
+      "firestore.rules": "ae299eca53afd201328c7480e702619d534e8c41cdfd83e3e5a6a46b2baa260d",
+      "firestore.spark.rules": "84a8362baff8fba2e13fcf0d009b8434d7bf03897111c3e6ab1df51e8bb47e3f",
+      "metadata.json": "a5b0a63b4938ccda4d1142d8336b53cbe3380e2bbf5b3c461b6526d6850dabb3",
+      "package.json": "e1445707d53a5771e7b17ba07a25e8d70328d0f70ba290b128def10a5f8f543d",
+      "bun.lock": "f3a2db982448e4fb1187ace25b4c6a8d3f83adecec5448fc339b0108677cebd5",
+      "src/types.ts": "b0823efe26f38d52f06f2ba8c282fc9183043d978cd6f50c11931d015f5ef98a",
+      "src/lib/firebase.ts": "82443cd4b2fb791b6ef3fce256cb8a71ea5f60425886aab6bb94edc2b0cbfa9",
+      "src/lib/adminAuth.ts": "d9d55998d36afcf2d58f4715751527ea5e8702841a1f6cff1ad0b4af26f1c8bd",
+      "src/lib/authoritativePricing.ts": "0dd4d1d009eccc846cae1ddfefbb9b86c7ef38b42a3c74ac9830d0caa89883d",
+      "src/lib/firestoreSync.ts": "36a8356d534415692217ed7d6c0bb2dab72855b67a674ace84c9b117a9b9df9e",
+      "src/lib/adminOrderRequests.ts": "89104c5d2092000a93f48c8f3ffe4707561d41c809acfaaac6128a07d21ebf8b",
+      "src/components/CheckoutPage.tsx": "f4d22a830162f195bdadc13c1581e7ba9a7cd069a9cd20fb354a42844515e5d3",
+      "src/components/OrderTrackerPage.tsx": "2717a6ec583c99c75333282b3c7b9db197d1fe21aaf390415ddfc3058afe7026",
+      "src/components/AdminOrderRequestsPage.tsx": "7cdde179f402f0f8900c90f8edcd5ad9e144b4061d48a9f161e1ff653da925bd",
+      "scripts/audit-rules.mjs": "c28b7f15595d15024d952886fbc967b85ad3c3e3299fcca4e07bfaea37977597",
+      "scripts/stage04d.test.ts": "326e52864ea606509b56561bc6e20c81e6822829ce351de956a8ce099c770225",
+      "scripts/stage04k.test.ts": "0fae1225f9adeb9d499c1df409fb43de6f77cdc51cd97b44a6101623a99be06f",
+      "scripts/stage04l.test.ts": "bbf90ca382bbe423351d62adecf4a5eccfe1f2744f12f057ba601ece9ac393eb",
+      "scripts/stage04l1.test.ts": "c74b4783f21e610031f9d7f18a76d050fc6a43f7d9f1e20c3a143e4d96d44742",
+      "scripts/stage04m.test.ts": "d18da762ca551d69bd8f8749491c606eff83ca0d72c4c8bf03ff97b05270ece3"
+    }
+  },
+  "customerNamedArchivesDiscovered": [
+    {
+      "path": "/app/applet/palm-metric-stage04n24-customer.zip",
+      "bytes": 28099225,
+      "fileCount": 108,
+      "sha256": "d01917c4c12146dd70d9c094e1efa9325d78fa7c4f6534438e31aba6f498f0a8",
+      "mtimeUtc": "2026-11-27T16:06:23.074625+00:00",
+      "matchesIdentity": "Identity B",
+      "isCustomerSource": true
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n22-customer.zip",
+      "bytes": 28065764,
+      "fileCount": 107,
+      "sha256": "14254ac4e37e95f8fe12c33c846c1c059181259c191f53ddc5bd750fd1ca1e61",
+      "mtimeUtc": "2026-11-27T16:06:21.603495+00:00",
+      "matchesIdentity": "Neither (stale 04N.2.1)",
+      "isCustomerSource": true
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n21-customer.zip",
+      "bytes": 28096952,
+      "fileCount": 108,
+      "sha256": "e384f5db1b19829b6f2d19e8be3426d32b14cd95b556c98eb10edb0575313665",
+      "mtimeUtc": "2026-11-27T16:06:19.967773+00:00",
+      "matchesIdentity": "Neither (04N.2.1)",
+      "isCustomerSource": true
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n2-customer.zip",
+      "bytes": 28141602,
+      "fileCount": 109,
+      "sha256": "1ed5781e6526a1b29aa40c84d299b515f1b6d9a84050055feeb0e55cf98be351",
+      "mtimeUtc": "2026-11-27T16:06:18.086179+00:00",
+      "matchesIdentity": "Neither (04N.2)",
+      "isCustomerSource": true
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n1-customer.zip",
+      "bytes": 1869874,
+      "fileCount": 87,
+      "sha256": "f7c15c7643f3f956be837be436630964c77ef2acbdc6eb4cd78963a1e1e00188",
+      "mtimeUtc": "2026-11-27T16:06:16.273197+00:00",
+      "matchesIdentity": "Neither (mislabeled Admin tree)",
+      "isCustomerSource": false
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n-customer.zip",
+      "bytes": 1865395,
+      "fileCount": 81,
+      "sha256": "7cc317816928dc539a73571952a1351104108a3843eb51d9e82850898ae321b4",
+      "mtimeUtc": "2026-11-27T16:06:16.290046+00:00",
+      "matchesIdentity": "Neither (duplicate of stage04n-admin.zip)",
+      "isCustomerSource": false
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04m2-customer.zip",
+      "bytes": 1856291,
+      "fileCount": 73,
+      "sha256": "3a3801a521bc4abb7477115910e931dc6d2f2c424c93b649a8544fd87ab07a0a",
+      "mtimeUtc": "2026-11-27T16:06:16.322068+00:00",
+      "matchesIdentity": "Neither (duplicate of stage04m2-admin.zip)",
+      "isCustomerSource": false
+    }
+  ],
+  "standaloneChecks": {
+    "auditRulesMjs": "PASS (exit 0)",
+    "tscNoEmit": "FAILED (exit 1, missing Customer node_modules / tsc)",
+    "viteBuild": "FAILED (exit 1, missing Customer node_modules / vite)",
+    "stage04dTest": "FAILED (exit 1, ERR_MODULE_NOT_FOUND: firebase)",
+    "stage04kTest": "FAILED (exit 1, ERR_MODULE_NOT_FOUND: react)",
+    "stage04lTest": "FAILED (exit 1, ERR_MODULE_NOT_FOUND: firebase)",
+    "stage04l1Test": "FAILED (exit 1, ERR_MODULE_NOT_FOUND: firebase)",
+    "stage04mTest": "FAILED (exit 1, ERR_MODULE_NOT_FOUND: firebase)",
+    "firebaseEmulator": "BLOCKED — NO_JAVA (firebase CLI 15.36.0 present, java missing)"
+  }
+}

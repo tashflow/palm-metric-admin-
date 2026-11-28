@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { isBootstrappedAdminEmail } from '../src/lib/adminAllowlist';
+import {
+  BOOTSTRAPPED_ADMIN_EMAILS,
+  BOOTSTRAPPED_ADMIN_UIDS,
+  isBootstrappedAdminEmail,
+} from '../src/lib/adminAllowlist';
 import { verifyAndPriceOrderRequest } from '../src/lib/authoritativePricing';
 import {
   OrderRequestStore,
@@ -32,6 +36,7 @@ import {
 class Stage04MMockStore implements OrderRequestStore {
   requests = new Map<string, Record<string, unknown>>();
   orders = new Map<string, Order>();
+  orderNumbers = new Map<string, Record<string, unknown>>();
   menu = new Map<string, MenuItem>();
   customizations = new Map<string, ProductCustomization>();
   auditLogs = new Map<string, OrderRequestAuditEntry[]>();
@@ -65,6 +70,7 @@ class Stage04MMockStore implements OrderRequestStore {
     try {
       const stagedRequests = new Map(this.requests);
       const stagedOrders = new Map(this.orders);
+      const stagedOrderNumbers = new Map(this.orderNumbers);
       const menuSnapshot = this.menu;
       const customSnapshot = this.customizations;
       const categoriesCopy = this.categories;
@@ -79,6 +85,10 @@ class Stage04MMockStore implements OrderRequestStore {
         },
         async getOrder(orderId) {
           const existing = stagedOrders.get(orderId);
+          return existing ? structuredClone(existing) : null;
+        },
+        async getOrderNumberClaim(orderNumber) {
+          const existing = stagedOrderNumbers.get(orderNumber);
           return existing ? structuredClone(existing) : null;
         },
         async getCatalogContext(itemIds) {
@@ -104,12 +114,25 @@ class Stage04MMockStore implements OrderRequestStore {
             this.requests.set(requestId, { ...current, ...patch });
           });
         },
+        updateMenuDoc: (itemId, patch) => {
+          pendingMutations.push(() => {
+            const current = this.menu.get(itemId);
+            if (current) {
+              this.menu.set(itemId, { ...current, ...(patch as Partial<MenuItem>) });
+            }
+          });
+        },
         setOrder: (orderId, orderData) => {
           pendingMutations.push(() => {
             this.orders.set(orderId, {
               id: orderId,
               ...(orderData as Omit<Order, 'id'>),
             });
+          });
+        },
+        setOrderNumberClaim: (orderNumber, claimData) => {
+          pendingMutations.push(() => {
+            this.orderNumbers.set(orderNumber, structuredClone(claimData));
           });
         },
         addAuditLog: (requestId, entry) => {
@@ -305,4 +328,86 @@ test('08. Stage 04M Legacy order compatibility and Spark rules separation check'
   // Ensure no Blaze cloud functions in project dependencies
   const pkg = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'package.json'), 'utf8'));
   assert.equal('firebase-functions' in (pkg.dependencies || {}), false);
+});
+
+test('09. Stage 04N.2.4 Customer App payload interop, stock deduction, and legacy under_review/in_review -> reviewing normalization', async () => {
+  const store = createStage04MMockStore();
+  // Simulate a request written by Customer App with orderNote, requestSource, legacy 'under_review'/'in_review' status
+  store.requests.set('req_cust_app_1', {
+    requestId: 'req_cust_app_1',
+    requestReference: 'REQ-CUSTAPP1',
+    customerUid: 'cust_real_1',
+    customerName: 'Laila Mansour',
+    customerContact: '+966509876543',
+    orderType: 'pickup',
+    pickupType: 'pickup',
+    currency: 'SAR',
+    orderNote: 'Light ice please',
+    items: [{ itemId: 'spanish-latte-04m', quantity: 3 }],
+    status: 'under_review',
+    reviewStatus: 'in_review',
+    requestSource: 'customer-app-spark',
+  });
+
+  const normalized = normalizeOrderRequest('req_cust_app_1', store.requests.get('req_cust_app_1')!);
+  assert.equal(normalized.status, 'reviewing');
+  assert.equal(
+    normalizeOrderRequest('req_in_rev', { items: [], status: 'in_review' }).status,
+    'reviewing'
+  );
+  assert.equal(
+    normalizeOrderRequest('req_rev', { items: [], status: 'reviewing' }).status,
+    'reviewing'
+  );
+  assert.equal(normalized.notes, 'Light ice please');
+  assert.equal(normalized.sourceApp, 'customer-app-spark');
+
+  const promo = await approveAndPromoteOrderRequest({
+    store,
+    requestId: 'req_cust_app_1',
+    actor: ADMIN,
+  });
+  assert.equal(promo.order.sourceRequestId, 'req_cust_app_1');
+  assert.equal(promo.order.requestReference, 'REQ-CUSTAPP1');
+  assert.equal(promo.order.totalBill, 64.5);
+  assert.equal(promo.request.verifiedTotalSar, 64.5);
+  assert.equal(promo.request.verifiedPricing?.totalSar, 64.5);
+  assert.equal(promo.request.verifiedPricing?.totalBillSar, 64.5);
+  assert.equal(store.menu.get('spanish-latte-04m')?.stockQuantity, 7);
+});
+
+test('10. Stage 04N.2.4 contract parity: palm-metric-app config, dual UIDs, 4 emails, canonical reviewing rules, and nested auditLogs', () => {
+  const sparkRules = fs.readFileSync(path.resolve(process.cwd(), 'firestore.spark.rules'), 'utf8');
+  const blueprint = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), 'firebase-blueprint.json'), 'utf8')
+  );
+  const appletCfg = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), 'firebase-applet-config.json'), 'utf8')
+  );
+  const firebaseTs = fs.readFileSync(path.resolve(process.cwd(), 'src/lib/firebase.ts'), 'utf8');
+
+  assert.equal(appletCfg.projectId, 'palm-metric-app');
+  assert.equal(appletCfg.firestoreDatabaseId, '(default)');
+  assert.ok(firebaseTs.includes("projectId: 'palm-metric-app'"));
+
+  for (const uid of BOOTSTRAPPED_ADMIN_UIDS) {
+    assert.ok(sparkRules.includes(`'${uid}'`), `Spark rules include Admin UID ${uid}`);
+  }
+  for (const email of BOOTSTRAPPED_ADMIN_EMAILS) {
+    assert.ok(sparkRules.includes(`'${email}'`), `Spark rules include Admin email ${email}`);
+  }
+
+  assert.ok(
+    sparkRules.includes("nextStatus in ['reviewing', 'verified', 'rejected', 'order_created']"),
+    'Spark rules emit canonical reviewing transition'
+  );
+  assert.ok(
+    blueprint.entities.OrderRequest.properties.status.enum.includes('reviewing'),
+    'Blueprint OrderRequest status enum includes reviewing'
+  );
+  assert.ok(
+    !blueprint.entities.OrderRequest.properties.status.enum.includes('under_review'),
+    'Blueprint OrderRequest status enum removes under_review'
+  );
+  assert.ok('/orderRequests/{requestId}/auditLogs/{logId}' in blueprint.firestore);
 });

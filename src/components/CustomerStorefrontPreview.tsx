@@ -963,7 +963,7 @@ export function CustomerStorefrontPreview({
                   const stageIndex =
                     req.status === 'pending_review'
                       ? 0
-                      : req.status === 'under_review'
+                      : req.status === 'reviewing'
                       ? 1
                       : req.status === 'verified'
                       ? 2
@@ -995,7 +995,7 @@ export function CustomerStorefrontPreview({
                           <span className="font-medium text-[#2C4435]">
                             {req.status === 'verified'
                               ? t.filterVerified
-                              : req.status === 'under_review'
+                              : req.status === 'reviewing'
                               ? t.filterUnderReview
                               : t.filterPendingReview}
                           </span>

@@ -15,6 +15,7 @@ import {
   handleFirestoreError,
   isBootstrappedAdminEmail,
 } from '../lib/firebase';
+import { isBootstrappedAdminUid } from '../lib/adminAllowlist';
 
 export interface AuthDiagnostics {
   providerIds: string[];
@@ -133,18 +134,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const hasGoogleProvider = providerIds.includes('google.com');
-    const isBootstrappedUid = currentUser.uid === 'jPgFPc8KbsXaPrdkyrbCQSFDMOP2';
+    const isBootstrappedUid = isBootstrappedAdminUid(currentUser.uid);
     const matchesBootstrapped =
       isBootstrappedUid || isBootstrappedAdminEmail(effectiveEmail) || isBootstrappedAdminEmail(currentUser.email);
 
     const isEmailVerified = Boolean(
       currentUser.emailVerified ||
         tokenEmailVerified ||
-        matchesBootstrapped ||
+        isBootstrappedUid ||
         (hasGoogleProvider && effectiveEmail.length > 0)
     );
 
-    if (!isEmailVerified && !matchesBootstrapped) {
+    if (!isEmailVerified) {
       setIsAdmin(false);
       setIsBootstrappedAdmin(false);
       setDenialReason('unverified');

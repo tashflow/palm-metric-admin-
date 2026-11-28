@@ -1,0 +1,19 @@
+{
+  "project": "palm-metric-app",
+  "stage": "STAGE 04N.2",
+  "timestamp": "2026-11-26T01:00:00Z",
+  "archives": {
+    "palm-metric-stage04n2-customer.zip": {
+      "fileCount": 109,
+      "sizeBytes": 28141602,
+      "sha256": "1ed5781e6526a1b29aa40c84d299b515f1b6d9a84050055feeb0e55cf98be351",
+      "description": "Authoritative Palm Metric Customer App release package."
+    },
+    "palm-metric-stage04n2-admin.zip": {
+      "fileCount": 87,
+      "sizeBytes": 1870040,
+      "sha256": "e449dfcfbcf88ba0382e7faa726d06562752dd367438ad6ec2199902c5189efc",
+      "description": "Authoritative Palm Metric Admin App release package."
+    }
+  }
+}

@@ -217,18 +217,21 @@ export function verifyAndPriceOrderRequest(
       (requestedStockByItemId.get(menuDoc.id) ?? 0) + itemInput.quantity;
     requestedStockByItemId.set(menuDoc.id, totalQtyForProduct);
 
-    if (
-      typeof menuDoc.stockQuantity === 'number' &&
-      Number.isFinite(menuDoc.stockQuantity) &&
-      totalQtyForProduct > Math.max(0, Math.floor(menuDoc.stockQuantity))
-    ) {
+    const availableStockNum =
+      typeof menuDoc.stockQuantity === 'number' && Number.isFinite(menuDoc.stockQuantity)
+        ? Math.max(0, Math.floor(menuDoc.stockQuantity))
+        : typeof menuDoc.stockCount === 'number' && Number.isFinite(menuDoc.stockCount)
+        ? Math.max(0, Math.floor(menuDoc.stockCount))
+        : null;
+
+    if (availableStockNum !== null && totalQtyForProduct > availableStockNum) {
       blockingIssues.push({
         code: 'INSUFFICIENT_STOCK',
         severity: 'error',
         itemId: menuDoc.id,
         itemName: menuDoc.name,
-        en: `Requested quantity (${totalQtyForProduct}) for "${menuDoc.name}" exceeds available stock (${Math.max(0, Math.floor(menuDoc.stockQuantity))}).`,
-        ar: `الكمية المطلوبة (${totalQtyForProduct}) للصنف "${menuDoc.nameAr || menuDoc.name}" تتجاوز المخزون المتاح (${Math.max(0, Math.floor(menuDoc.stockQuantity))}).`,
+        en: `Requested quantity (${totalQtyForProduct}) for "${menuDoc.name}" exceeds available stock (${availableStockNum}).`,
+        ar: `الكمية المطلوبة (${totalQtyForProduct}) للصنف "${menuDoc.nameAr || menuDoc.name}" تتجاوز المخزون المتاح (${availableStockNum}).`,
       });
     }
 
@@ -634,6 +637,7 @@ export function verifyAndPriceOrderRequest(
     verifiedItems,
     breakdown: {
       currency: 'SAR',
+      orderType: 'pickup',
       pricingVersion: AUTHORITATIVE_PRICING_VERSION,
       subtotalHalalas,
       discountHalalas,
@@ -643,6 +647,7 @@ export function verifyAndPriceOrderRequest(
       discountSar: halalasToSar(discountHalalas),
       taxSar: halalasToSar(taxHalalas),
       totalSar: halalasToSar(totalHalalas),
+      totalBillSar: halalasToSar(totalHalalas),
       ...(appliedDiscountLabel ? { appliedDiscountLabel } : {}),
       ...(appliedTaxRatePercent !== undefined ? { appliedTaxRatePercent } : {}),
       ...(clientSubmittedTotalSar !== undefined ? { clientSubmittedTotalSar } : {}),
@@ -651,3 +656,63 @@ export function verifyAndPriceOrderRequest(
     },
   };
 }
+
+export interface StockDeductionPlan {
+  itemId: string;
+  requestedQty: number;
+  initialStock: number;
+  remainingStock: number;
+  updatesStockQuantity: boolean;
+  updatesStockCount: boolean;
+}
+
+export function extractManagedNumericStock(
+  menuDoc: MenuItem
+): { stock: number; updatesQuantity: boolean; updatesCount: boolean } | null {
+  if (typeof menuDoc.stockQuantity === 'number' && Number.isFinite(menuDoc.stockQuantity)) {
+    return {
+      stock: Math.max(0, Math.floor(menuDoc.stockQuantity)),
+      updatesQuantity: true,
+      updatesCount: false,
+    };
+  }
+  if (typeof menuDoc.stockCount === 'number' && Number.isFinite(menuDoc.stockCount)) {
+    return {
+      stock: Math.max(0, Math.floor(menuDoc.stockCount)),
+      updatesQuantity: false,
+      updatesCount: true,
+    };
+  }
+  return null;
+}
+
+export function computeStockDeductionPlans(
+  items: OrderRequestItemInput[],
+  catalog: AuthoritativeCatalogContext
+): StockDeductionPlan[] {
+  const aggregated = new Map<string, number>();
+  for (const item of items) {
+    const id = (item.itemId || item.productId || '').trim();
+    if (!id || !Number.isInteger(item.quantity) || item.quantity < 1) continue;
+    aggregated.set(id, (aggregated.get(id) ?? 0) + item.quantity);
+  }
+
+  const plans: StockDeductionPlan[] = [];
+  for (const [itemId, requestedQty] of aggregated.entries()) {
+    const menuDoc = getFromMapOrRecord(catalog.menuById, itemId);
+    if (!menuDoc) continue;
+    const managed = extractManagedNumericStock(menuDoc);
+    if (!managed) continue;
+    const remaining = Math.max(0, managed.stock - requestedQty);
+    plans.push({
+      itemId,
+      requestedQty,
+      initialStock: managed.stock,
+      remainingStock: remaining,
+      updatesStockQuantity: managed.updatesQuantity,
+      updatesStockCount: managed.updatesCount,
+    });
+  }
+  return plans;
+}
+

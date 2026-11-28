@@ -34,6 +34,7 @@ import {
   AUTHORITATIVE_PRICING_VERSION,
   AuthoritativeCatalogContext,
   AuthoritativeVerificationResult,
+  computeStockDeductionPlans,
   verifyAndPriceOrderRequest,
 } from './authoritativePricing';
 import { sanitizeFirestoreCustomization } from './productCustomizations';
@@ -43,6 +44,8 @@ export type OrderWorkflowErrorCode =
   | 'INVALID_STATE_TRANSITION'
   | 'ALREADY_REJECTED'
   | 'ALREADY_PROMOTED_CONFLICT'
+  | 'ALREADY_PROMOTED_ORDER_NUMBER_CONFLICT'
+  | 'STOCK_DEDUCTION_UNSUPPORTED'
   | 'REJECTION_REASON_REQUIRED'
   | 'VERIFICATION_FAILED'
   | 'UNAUTHORIZED_ADMIN';
@@ -108,10 +111,10 @@ export function generateRequestReference(): string {
 function normalizeStatus(rawStatus: unknown): OrderRequestStatus {
   const val = typeof rawStatus === 'string' ? rawStatus.trim().toLowerCase() : '';
   switch (val) {
+    case 'reviewing':
     case 'under_review':
     case 'in_review':
-    case 'reviewing':
-      return 'under_review';
+      return 'reviewing';
     case 'verified':
     case 'price_verified':
       return 'verified';
@@ -146,7 +149,7 @@ function normalizeReviewStatus(
     return val;
   }
   switch (status) {
-    case 'under_review':
+    case 'reviewing':
       return 'in_review';
     case 'verified':
       return 'verified';
@@ -229,24 +232,67 @@ export function normalizeOrderRequest(
       ? raw.totalBill
       : undefined;
 
+  const rawNotes =
+    typeof raw.notes === 'string' && raw.notes.trim()
+      ? raw.notes
+      : typeof raw.orderNote === 'string' && raw.orderNote.trim()
+      ? raw.orderNote
+      : undefined;
+
+  const rawSourceApp =
+    typeof raw.sourceApp === 'string' && raw.sourceApp.trim()
+      ? raw.sourceApp
+      : typeof raw.requestSource === 'string' && raw.requestSource.trim()
+      ? raw.requestSource
+      : undefined;
+
+  const rawPricing =
+    raw.verifiedPricing && typeof raw.verifiedPricing === 'object'
+      ? (raw.verifiedPricing as NonNullable<OrderRequest['verifiedPricing']>)
+      : undefined;
+  const resolvedVerifiedTotal =
+    typeof raw.verifiedTotalSar === 'number' && Number.isFinite(raw.verifiedTotalSar)
+      ? raw.verifiedTotalSar
+      : typeof rawPricing?.totalSar === 'number' && Number.isFinite(rawPricing.totalSar)
+      ? rawPricing.totalSar
+      : typeof rawPricing?.totalBillSar === 'number' && Number.isFinite(rawPricing.totalBillSar)
+      ? rawPricing.totalBillSar
+      : undefined;
+  const normalizedVerifiedPricing = rawPricing
+    ? {
+        ...rawPricing,
+        totalSar:
+          typeof rawPricing.totalSar === 'number'
+            ? rawPricing.totalSar
+            : rawPricing.totalBillSar ?? 0,
+        totalBillSar:
+          typeof rawPricing.totalBillSar === 'number'
+            ? rawPricing.totalBillSar
+            : rawPricing.totalSar ?? 0,
+      }
+    : undefined;
+
   return {
     id,
+    requestId:
+      typeof raw.requestId === 'string' && raw.requestId.trim() ? raw.requestId.trim() : id,
     requestReference: rawRef,
     customerUid: typeof raw.customerUid === 'string' ? raw.customerUid : '',
     customerName: typeof raw.customerName === 'string' ? raw.customerName : '',
     customerContact: typeof raw.customerContact === 'string' ? raw.customerContact : '',
+    orderType: 'pickup',
     pickupType: 'pickup',
+    currency: 'SAR',
     ...(typeof raw.pickupWindow === 'string' ? { pickupWindow: raw.pickupWindow } : {}),
     items,
-    ...(typeof raw.notes === 'string' ? { notes: raw.notes } : {}),
+    ...(rawNotes !== undefined ? { notes: rawNotes } : {}),
     status,
     reviewStatus,
-    ...(typeof raw.sourceApp === 'string' ? { sourceApp: raw.sourceApp } : {}),
+    ...(rawSourceApp !== undefined ? { sourceApp: rawSourceApp } : {}),
     ...(raw.lang === 'ar' || raw.lang === 'en' ? { lang: raw.lang } : {}),
     ...(clientEstimatedTotal !== undefined ? { clientEstimatedTotal } : {}),
-    ...(raw.verifiedPricing && typeof raw.verifiedPricing === 'object'
-      ? { verifiedPricing: raw.verifiedPricing as OrderRequest['verifiedPricing'] }
-      : {}),
+    ...(resolvedVerifiedTotal !== undefined ? { verifiedTotalSar: resolvedVerifiedTotal } : {}),
+    ...(normalizedVerifiedPricing ? { verifiedPricing: normalizedVerifiedPricing } : {}),
     ...(Array.isArray(raw.verifiedItems)
       ? { verifiedItems: raw.verifiedItems as OrderRequest['verifiedItems'] }
       : {}),
@@ -279,8 +325,11 @@ export interface OrderRequestTransactionContext {
   getOrderRequest(requestId: string): Promise<OrderRequest | null>;
   getOrder(orderId: string): Promise<Order | null>;
   getCatalogContext(itemIds: string[]): Promise<AuthoritativeCatalogContext>;
+  getOrderNumberClaim?(orderNumber: string): Promise<Record<string, unknown> | null>;
   updateOrderRequest(requestId: string, patch: Record<string, unknown>): void;
+  updateMenuDoc?(itemId: string, patch: Record<string, unknown>): void;
   setOrder(orderId: string, orderData: Record<string, unknown>): void;
+  setOrderNumberClaim?(orderNumber: string, claimData: Record<string, unknown>): void;
   addAuditLog(requestId: string, entry: OrderRequestAuditEntry): void;
   serverTimestamp(): unknown;
   nowIso(): string;
@@ -386,7 +435,7 @@ export async function startOrderRequestReview(params: {
         'Promoted requests already have a live official order.'
       );
     }
-    if (req.status === 'under_review') {
+    if (req.status === 'reviewing') {
       return req;
     }
     if (req.status === 'verified') {
@@ -401,7 +450,7 @@ export async function startOrderRequestReview(params: {
       action: 'start_review',
       actor: params.actor,
       fromStatus: req.status,
-      toStatus: 'under_review',
+      toStatus: 'reviewing',
       note: params.note,
       createdAtIso: nowIso,
       serverTs: ts,
@@ -409,7 +458,7 @@ export async function startOrderRequestReview(params: {
     const nextTrail = appendAuditSummary(req.auditTrail, [auditEntry]);
 
     tx.updateOrderRequest(req.id, {
-      status: 'under_review',
+      status: 'reviewing',
       reviewStatus: 'in_review',
       reviewedBy: params.actor.uid,
       ...(params.actor.email ? { reviewedByEmail: params.actor.email } : {}),
@@ -421,7 +470,7 @@ export async function startOrderRequestReview(params: {
 
     return {
       ...req,
-      status: 'under_review',
+      status: 'reviewing',
       reviewStatus: 'in_review',
       reviewedBy: params.actor.uid,
       ...(params.actor.email ? { reviewedByEmail: params.actor.email } : {}),
@@ -507,6 +556,7 @@ export async function verifyOrderRequest(params: {
     tx.updateOrderRequest(req.id, {
       status: 'verified',
       reviewStatus: 'verified',
+      verifiedTotalSar: verification.breakdown.totalSar,
       verifiedPricing: verification.breakdown,
       verifiedItems: verification.verifiedItems,
       verifiedBy: params.actor.uid,
@@ -524,6 +574,7 @@ export async function verifyOrderRequest(params: {
         ...req,
         status: 'verified',
         reviewStatus: 'verified',
+        verifiedTotalSar: verification.breakdown.totalSar,
         verifiedPricing: verification.breakdown,
         verifiedItems: verification.verifiedItems,
         verifiedBy: params.actor.uid,
@@ -570,14 +621,14 @@ export async function approveAndPromoteOrderRequest(params: {
     }
 
     if (req.status === 'order_created') {
-      if (req.approvedOrderId === deterministicOrderId && existingOfficialOrder) {
-        return {
-          idempotentReplay: true,
-          order: existingOfficialOrder,
-          request: req,
-        };
-      }
-      if (existingOfficialOrder) {
+      const existingLinkedRequestId =
+        existingOfficialOrder?.sourceRequestId || existingOfficialOrder?.requestId;
+      if (
+        existingOfficialOrder &&
+        (!req.approvedOrderId || req.approvedOrderId === deterministicOrderId) &&
+        existingLinkedRequestId === req.id &&
+        existingOfficialOrder.customerUid === req.customerUid
+      ) {
         return {
           idempotentReplay: true,
           order: existingOfficialOrder,
@@ -586,12 +637,17 @@ export async function approveAndPromoteOrderRequest(params: {
       }
       throw new OrderWorkflowError(
         'ALREADY_PROMOTED_CONFLICT',
-        `Order request "${req.requestReference}" is already marked order_created.`
+        `Order request "${req.requestReference}" has inconsistent promoted order state.`
       );
     }
 
     if (existingOfficialOrder) {
-      if (existingOfficialOrder.requestId === req.id) {
+      const existingLinkedRequestId =
+        existingOfficialOrder.sourceRequestId || existingOfficialOrder.requestId;
+      if (
+        existingLinkedRequestId === req.id &&
+        existingOfficialOrder.customerUid === req.customerUid
+      ) {
         return {
           idempotentReplay: true,
           order: existingOfficialOrder,
@@ -600,7 +656,7 @@ export async function approveAndPromoteOrderRequest(params: {
       }
       throw new OrderWorkflowError(
         'ALREADY_PROMOTED_CONFLICT',
-        `Target official order "${deterministicOrderId}" already exists.`
+        `Target official order "${deterministicOrderId}" already exists with mismatched request ownership.`
       );
     }
 
@@ -624,7 +680,41 @@ export async function approveAndPromoteOrderRequest(params: {
       );
     }
 
-    const orderNumber = getOfficialOrderNumber(req.id, req.requestReference);
+    const stockPlans = computeStockDeductionPlans(req.items, catalog);
+    if (stockPlans.length > 0 && typeof tx.updateMenuDoc !== 'function') {
+      throw new OrderWorkflowError(
+        'STOCK_DEDUCTION_UNSUPPORTED',
+        'Atomic menu stock deduction handler is required when approving stock-tracked items.'
+      );
+    }
+
+    // Collision-checked deterministic PM-XXXXXX allocation BEFORE any transaction writes
+    let orderNumber = getOfficialOrderNumber(req.id, req.requestReference);
+    if (typeof tx.getOrderNumberClaim === 'function') {
+      let claimed = false;
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const candidate =
+          attempt === 0
+            ? orderNumber
+            : getOfficialOrderNumber(req.id, `${req.requestReference}:retry:${attempt}`);
+        const existingClaim = await tx.getOrderNumberClaim(candidate);
+        if (
+          !existingClaim ||
+          (existingClaim.requestId === req.id && existingClaim.orderId === deterministicOrderId)
+        ) {
+          orderNumber = candidate;
+          claimed = true;
+          break;
+        }
+      }
+      if (!claimed) {
+        throw new OrderWorkflowError(
+          'ALREADY_PROMOTED_ORDER_NUMBER_CONFLICT',
+          'Unable to allocate a unique official order number after collision retries.'
+        );
+      }
+    }
+
     const ts = tx.serverTimestamp();
 
     const canonicalOrderItems: OrderLineItem[] = verification.verifiedItems.map((vi) => ({
@@ -667,14 +757,15 @@ export async function approveAndPromoteOrderRequest(params: {
       totalBill: verification.breakdown.totalSar,
       currency: 'SAR',
       orderType: 'pickup',
-      paymentStatus: 'pay_at_pickup',
+      paymentMethod: 'pay_on_pickup',
+      paymentStatus: 'unpaid',
       status: 'Pending',
       ...(pickupNotes ? { notes: pickupNotes } : {}),
       sourceApp: 'palm-metric-admin-stage04l',
       ...(req.lang ? { lang: req.lang } : {}),
       idempotencyKey: req.id,
       pricingVersion: AUTHORITATIVE_PRICING_VERSION,
-      requestId: req.id,
+      sourceRequestId: req.id,
       requestReference: req.requestReference,
       approvedBy: params.actor.uid,
       ...(params.actor.email ? { approvedByEmail: params.actor.email } : {}),
@@ -733,7 +824,46 @@ export async function approveAndPromoteOrderRequest(params: {
 
     const nextTrail = appendAuditSummary(req.auditTrail, auditEntries);
 
+    // Atomic writes: menu stock deductions, official /orders, /orderNumbers claim, /orderRequests update, auditLogs
+    for (const plan of stockPlans) {
+      const existingMenuDoc =
+        catalog.menuById instanceof Map
+          ? catalog.menuById.get(plan.itemId)
+          : catalog.menuById[plan.itemId];
+      const menuPatch: Record<string, unknown> = {
+        updatedAt: ts,
+      };
+      if (plan.updatesStockQuantity) {
+        menuPatch.stockQuantity = plan.remainingStock;
+      }
+      if (plan.updatesStockCount) {
+        menuPatch.stockCount = plan.remainingStock;
+      }
+      if (plan.remainingStock === 0) {
+        menuPatch.inStock = false;
+        if (existingMenuDoc && existingMenuDoc.outOfStock !== undefined) {
+          menuPatch.outOfStock = true;
+        }
+        if (existingMenuDoc && existingMenuDoc.isAvailable !== undefined) {
+          menuPatch.isAvailable = false;
+        }
+        if (existingMenuDoc && existingMenuDoc.available !== undefined) {
+          menuPatch.available = false;
+        }
+      }
+      tx.updateMenuDoc!(plan.itemId, menuPatch);
+    }
+
     tx.setOrder(deterministicOrderId, officialOrderPayload);
+    if (typeof tx.setOrderNumberClaim === 'function') {
+      tx.setOrderNumberClaim(orderNumber, {
+        orderNumber,
+        orderId: deterministicOrderId,
+        requestId: req.id,
+        customerUid: req.customerUid,
+        createdAt: ts,
+      });
+    }
     tx.updateOrderRequest(req.id, {
       status: 'order_created',
       reviewStatus: 'approved',
@@ -742,6 +872,7 @@ export async function approveAndPromoteOrderRequest(params: {
       approvedBy: params.actor.uid,
       ...(params.actor.email ? { approvedByEmail: params.actor.email } : {}),
       approvedAt: ts,
+      verifiedTotalSar: verification.breakdown.totalSar,
       verifiedPricing: verification.breakdown,
       verifiedItems: verification.verifiedItems,
       ...(req.verifiedBy
@@ -771,14 +902,15 @@ export async function approveAndPromoteOrderRequest(params: {
       totalBill: verification.breakdown.totalSar,
       currency: 'SAR',
       orderType: 'pickup',
-      paymentStatus: 'pay_at_pickup',
+      paymentMethod: 'pay_on_pickup',
+      paymentStatus: 'unpaid',
       status: 'Pending',
       ...(pickupNotes ? { notes: pickupNotes } : {}),
       sourceApp: 'palm-metric-admin-stage04l',
       ...(req.lang ? { lang: req.lang } : {}),
       idempotencyKey: req.id,
       pricingVersion: AUTHORITATIVE_PRICING_VERSION,
-      requestId: req.id,
+      sourceRequestId: req.id,
       requestReference: req.requestReference,
       approvedBy: params.actor.uid,
       ...(params.actor.email ? { approvedByEmail: params.actor.email } : {}),
@@ -794,6 +926,7 @@ export async function approveAndPromoteOrderRequest(params: {
       approvedOrderNumber: orderNumber,
       approvedBy: params.actor.uid,
       ...(params.actor.email ? { approvedByEmail: params.actor.email } : {}),
+      verifiedTotalSar: verification.breakdown.totalSar,
       verifiedPricing: verification.breakdown,
       verifiedItems: verification.verifiedItems,
       auditTrail: nextTrail,
@@ -973,11 +1106,22 @@ export function createFirestoreOrderRequestStore(
               pricingConfig,
             };
           },
+          async getOrderNumberClaim(orderNumber) {
+            const snap = await fsTx.get(doc(firestore, 'orderNumbers', orderNumber));
+            if (!snap.exists()) return null;
+            return snap.data() as Record<string, unknown>;
+          },
           updateOrderRequest(requestId, patch) {
             fsTx.update(doc(firestore, 'orderRequests', requestId), patch);
           },
+          updateMenuDoc(itemId, patch) {
+            fsTx.update(doc(firestore, 'menu', itemId), patch);
+          },
           setOrder(orderId, orderData) {
             fsTx.set(doc(firestore, 'orders', orderId), orderData);
+          },
+          setOrderNumberClaim(orderNumber, claimData) {
+            fsTx.set(doc(firestore, 'orderNumbers', orderNumber), claimData);
           },
           addAuditLog(requestId, entry) {
             fsTx.set(
@@ -1098,16 +1242,20 @@ export async function createCustomerOrderRequest(
   };
 
   await setDoc(requestRefDoc, {
+    requestId,
     requestReference,
     customerUid: params.customerUid,
     customerName: params.customerName,
     customerContact: params.customerContact,
+    orderType: 'pickup',
     pickupType: 'pickup',
+    currency: 'SAR',
     ...(params.pickupWindow ? { pickupWindow: params.pickupWindow } : {}),
     items: params.items,
     ...(params.notes ? { notes: params.notes } : {}),
     status: 'pending_review',
     reviewStatus: 'unreviewed',
+    requestSource: params.sourceApp || 'palm-metric-customer-preview',
     sourceApp: params.sourceApp || 'palm-metric-customer-preview',
     ...(params.lang ? { lang: params.lang } : {}),
     ...(typeof params.clientEstimatedTotal === 'number'

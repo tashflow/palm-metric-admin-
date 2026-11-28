@@ -40,6 +40,14 @@
           "type": "boolean",
           "description": "Whether the item is currently available for customer ordering."
         },
+        "stockQuantity": {
+          "type": "number",
+          "description": "Optional managed stock quantity decremented atomically on order approval."
+        },
+        "stockCount": {
+          "type": "number",
+          "description": "Optional alias stock counter decremented atomically when present."
+        },
         "imageUrl": {
           "type": "string",
           "maxLength": 2048,
@@ -226,6 +234,11 @@
           "enum": ["pickup"],
           "description": "Pickup-only fulfillment type."
         },
+        "paymentMethod": {
+          "type": "string",
+          "enum": ["pay_on_pickup"],
+          "description": "Pickup payment method."
+        },
         "paymentStatus": {
           "type": "string",
           "enum": ["unpaid", "pending", "paid", "pay_at_pickup"],
@@ -241,10 +254,10 @@
           "maxLength": 240,
           "description": "Optional preparation notes."
         },
-        "requestId": {
+        "sourceRequestId": {
           "type": "string",
           "maxLength": 128,
-          "description": "Originating /orderRequests document ID when promoted by Admin."
+          "description": "Canonical originating /orderRequests document ID when promoted by Admin."
         },
         "requestReference": {
           "type": "string",
@@ -449,23 +462,30 @@
       "description": "Stage 04K/04L customer order request queued for Admin verification, authoritative SAR pricing, and atomic promotion to /orders.",
       "type": "object",
       "properties": {
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "requestReference": { "type": "string", "minLength": 5, "maxLength": 32 },
         "customerUid": { "type": "string", "minLength": 1, "maxLength": 128 },
         "customerName": { "type": "string", "minLength": 1, "maxLength": 80 },
         "customerContact": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "orderType": { "type": "string", "enum": ["pickup"] },
         "pickupType": { "type": "string", "enum": ["pickup"] },
         "pickupWindow": { "type": "string", "maxLength": 80 },
+        "currency": { "type": "string", "enum": ["SAR"] },
         "items": { "type": "array", "description": "Requested menu items, quantities, and option IDs." },
         "notes": { "type": "string", "maxLength": 300 },
+        "orderNote": { "type": "string", "maxLength": 300 },
         "status": {
           "type": "string",
-          "enum": ["pending_review", "under_review", "verified", "rejected", "order_created"]
+          "enum": ["pending_review", "reviewing", "verified", "rejected", "order_created"]
         },
         "reviewStatus": {
           "type": "string",
           "enum": ["unreviewed", "in_review", "verified", "needs_attention", "approved", "rejected"]
         },
+        "requestSource": { "type": "string", "maxLength": 64 },
+        "sourceApp": { "type": "string", "maxLength": 64 },
         "clientEstimatedTotal": { "type": "number" },
+        "verifiedTotalSar": { "type": "number" },
         "verifiedPricing": { "type": "object" },
         "verifiedItems": { "type": "array" },
         "reviewedBy": { "type": "string", "maxLength": 128 },
@@ -491,6 +511,19 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "OrderNumberClaim": {
+      "title": "OrderNumberClaim",
+      "description": "Immutable registry guaranteeing unique official PM-XXXXXX order numbers across concurrent approvals.",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string", "maxLength": 32 },
+        "orderId": { "type": "string", "maxLength": 128 },
+        "requestId": { "type": "string", "maxLength": 128 },
+        "customerUid": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderNumber", "orderId", "requestId", "customerUid", "createdAt"]
     },
     "OrderRequestAuditLog": {
       "title": "OrderRequestAuditLog",
@@ -539,6 +572,14 @@
     "/orderRequests/{requestId}/auditLogs/{logId}": {
       "schema": { "$ref": "#/entities/OrderRequestAuditLog" },
       "description": "Append-only Admin audit trail records for each order request."
+    },
+    "/orderNumbers/{orderNumber}": {
+      "schema": { "$ref": "#/entities/OrderNumberClaim" },
+      "description": "Unique official PM-XXXXXX order number claim registry."
+    },
+    "/orderRequestAuditLogs/{auditId}": {
+      "schema": { "$ref": "#/entities/OrderRequestAuditLog" },
+      "description": "Flat append-only cross-app order request audit log collection."
     },
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminUser" },

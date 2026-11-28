@@ -314,7 +314,7 @@ function AdminDashboard() {
       orderRequests.filter(
         (req) =>
           req.status === 'pending_review' ||
-          req.status === 'under_review' ||
+          req.status === 'reviewing' ||
           req.status === 'verified'
       ).length,
     [orderRequests]

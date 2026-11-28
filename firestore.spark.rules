@@ -78,7 +78,7 @@ service cloud.firestore {
     // Catalog, Media & Customization Validators
     function isValidMenuItem(data) {
       return data.keys().hasAll(['name', 'category', 'price', 'description', 'inStock', 'imageUrl', 'storagePath', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['name', 'nameAr', 'category', 'price', 'description', 'descriptionAr', 'inStock', 'isAvailable', 'available', 'outOfStock', 'stockQuantity', 'imageUrl', 'storagePath', 'allowMilkOption', 'coconutMilkPrice', 'allowTemperature', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['name', 'nameAr', 'category', 'price', 'description', 'descriptionAr', 'inStock', 'isAvailable', 'available', 'outOfStock', 'stockQuantity', 'stockCount', 'imageUrl', 'storagePath', 'allowMilkOption', 'coconutMilkPrice', 'allowTemperature', 'createdAt', 'updatedAt'])
         && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
         && (!('nameAr' in data) || (data.nameAr is string && data.nameAr.size() <= 80))
         && data.category is string && data.category.size() >= 1 && data.category.size() <= 60
@@ -86,7 +86,11 @@ service cloud.firestore {
         && data.description is string && data.description.size() <= 400
         && (!('descriptionAr' in data) || (data.descriptionAr is string && data.descriptionAr.size() <= 400))
         && data.inStock is bool
-        && (!('stockQuantity' in data) || (data.stockQuantity is int && data.stockQuantity >= 0 && data.stockQuantity <= 100000))
+        && (!('isAvailable' in data) || data.isAvailable is bool)
+        && (!('available' in data) || data.available is bool)
+        && (!('outOfStock' in data) || data.outOfStock is bool)
+        && (!('stockQuantity' in data) || (data.stockQuantity is number && data.stockQuantity >= 0 && data.stockQuantity <= 100000))
+        && (!('stockCount' in data) || (data.stockCount is number && data.stockCount >= 0 && data.stockCount <= 100000))
         && data.imageUrl is string && data.imageUrl.size() <= 2048
         && data.storagePath is string && data.storagePath.size() <= 512
         && (!('allowMilkOption' in data) || data.allowMilkOption is bool)
@@ -215,19 +219,29 @@ service cloud.firestore {
         && areValidCustomizationGroups(data.groups);
     }
 
-    // Stage 04L Order Request Validators
-    function isValidOrderRequestCreate(data) {
-      return data.keys().hasAll(['requestReference', 'customerUid', 'customerName', 'customerContact', 'pickupType', 'items', 'status', 'reviewStatus', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['requestReference', 'customerUid', 'customerName', 'customerContact', 'pickupType', 'pickupWindow', 'items', 'notes', 'status', 'reviewStatus', 'sourceApp', 'lang', 'clientEstimatedTotal', 'auditTrail', 'createdAt', 'updatedAt'])
+    // Stage 04L / 04N.2.2 Converged Order Request Validators
+    function isValidOrderRequestCreate(data, requestId) {
+      return data.keys().hasAll(['requestReference', 'customerUid', 'customerName', 'customerContact', 'items', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'requestId', 'requestReference', 'customerUid', 'customerName', 'customerContact',
+          'orderType', 'pickupType', 'pickupWindow', 'currency', 'items',
+          'notes', 'orderNote', 'status', 'reviewStatus', 'requestSource', 'sourceApp',
+          'lang', 'clientEstimatedTotal', 'auditTrail', 'createdAt', 'updatedAt'
+        ])
+        && (!('requestId' in data) || data.requestId == requestId)
         && data.requestReference is string && data.requestReference.size() >= 5 && data.requestReference.size() <= 32 && data.requestReference.matches('^REQ-[a-zA-Z0-9_\\-]+$')
         && data.customerUid is string && data.customerUid == request.auth.uid && data.customerUid.size() <= 128
         && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80
         && data.customerContact is string && data.customerContact.size() >= 1 && data.customerContact.size() <= 80
-        && data.pickupType == 'pickup'
+        && (!('orderType' in data) || data.orderType == 'pickup')
+        && (!('pickupType' in data) || data.pickupType == 'pickup')
+        && ('pickupType' in data || 'orderType' in data)
+        && (!('currency' in data) || data.currency == 'SAR')
         && data.items is list && data.items.size() >= 1 && data.items.size() <= 50 && data.items[0] is map
         && data.status == 'pending_review'
-        && data.reviewStatus == 'unreviewed'
+        && (!('reviewStatus' in data) || data.reviewStatus == 'unreviewed')
         && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300))
+        && (!('orderNote' in data) || (data.orderNote is string && data.orderNote.size() <= 300))
         && (!('pickupWindow' in data) || (data.pickupWindow is string && data.pickupWindow.size() <= 80))
         && (!('clientEstimatedTotal' in data) || (data.clientEstimatedTotal is number && data.clientEstimatedTotal >= 0 && data.clientEstimatedTotal <= 100000))
         && (!('auditTrail' in data) || (data.auditTrail is list && data.auditTrail.size() <= 5))
@@ -236,29 +250,42 @@ service cloud.firestore {
     }
 
     function isAllowedRequestStatusTransition(prevStatus, nextStatus) {
-      return (prevStatus == 'pending_review' && nextStatus in ['under_review', 'verified', 'rejected', 'order_created'])
-        || (prevStatus == 'under_review' && nextStatus in ['verified', 'rejected', 'order_created'])
+      return (prevStatus == 'pending_review' && nextStatus in ['reviewing', 'verified', 'rejected', 'order_created'])
+        || (prevStatus in ['reviewing', 'under_review', 'in_review'] && nextStatus in ['verified', 'rejected', 'order_created'])
         || (prevStatus == 'verified' && nextStatus in ['rejected', 'order_created']);
     }
 
     function isValidOrderRequestAdminUpdate(requestId, data, prev) {
-      return prev.status in ['pending_review', 'under_review', 'verified']
+      return prev.status in ['pending_review', 'under_review', 'reviewing', 'verified']
         && data.status is string
         && isAllowedRequestStatusTransition(prev.status, data.status)
-        && data.requestReference == prev.requestReference
         && data.customerUid == prev.customerUid
         && data.customerName == prev.customerName
         && data.customerContact == prev.customerContact
-        && data.pickupType == prev.pickupType
+        && (!('requestId' in prev) || data.requestId == prev.requestId)
+        && (!('requestReference' in prev) || data.requestReference == prev.requestReference)
+        && (!('pickupType' in prev) || data.pickupType == prev.pickupType)
+        && (!('orderType' in prev) || data.orderType == prev.orderType)
+        && (!('currency' in prev) || data.currency == prev.currency)
+        && (!('orderNote' in prev) || data.orderNote == prev.orderNote)
+        && (!('notes' in prev) || data.notes == prev.notes)
         && data.items == prev.items
         && data.createdAt == prev.createdAt
         && data.updatedAt == request.time
         && (!('auditTrail' in data) || (data.auditTrail is list && data.auditTrail.size() <= 30))
+        && (!('verifiedTotalSar' in data) || (data.verifiedTotalSar is number && data.verifiedTotalSar >= 0 && data.verifiedTotalSar <= 100000))
+        && (!('verifiedPricing' in data) || (
+          data.verifiedPricing is map
+          && data.verifiedPricing.currency == 'SAR'
+          && data.verifiedPricing.totalSar is number && data.verifiedPricing.totalSar >= 0 && data.verifiedPricing.totalSar <= 100000
+          && (!('totalBillSar' in data.verifiedPricing) || data.verifiedPricing.totalBillSar == data.verifiedPricing.totalSar)
+          && (!('verifiedTotalSar' in data) || data.verifiedTotalSar == data.verifiedPricing.totalSar)
+        ))
         && (
           data.status != 'rejected' || (
-            data.reviewStatus == 'rejected'
+            (!('reviewStatus' in data) || data.reviewStatus == 'rejected')
             && 'rejectionReason' in data && data.rejectionReason is string
-            && data.rejectionReason.size() >= 1 && data.rejectionReason.size() <= 300
+            && data.rejectionReason.size() >= 3 && data.rejectionReason.size() <= 300
             && data.rejectedBy == request.auth.uid
             && data.rejectedAt == request.time
             && !('approvedOrderId' in data)
@@ -266,7 +293,7 @@ service cloud.firestore {
         )
         && (
           data.status != 'order_created' || (
-            data.reviewStatus == 'approved'
+            (!('reviewStatus' in data) || data.reviewStatus == 'approved')
             && data.approvedOrderId == 'ord_' + requestId
             && 'approvedOrderNumber' in data && data.approvedOrderNumber is string && data.approvedOrderNumber.size() >= 3 && data.approvedOrderNumber.size() <= 32
             && data.approvedBy == request.auth.uid
@@ -275,13 +302,15 @@ service cloud.firestore {
             && data.verifiedPricing.currency == 'SAR'
             && data.verifiedPricing.totalSar is number && data.verifiedPricing.totalSar >= 0 && data.verifiedPricing.totalSar <= 100000
             && existsAfter(/databases/$(database)/documents/orders/$(data.approvedOrderId))
+            && getAfter(/databases/$(database)/documents/orders/$(data.approvedOrderId)).data.sourceRequestId == requestId
+            && getAfter(/databases/$(database)/documents/orders/$(data.approvedOrderId)).data.orderNumber == data.approvedOrderNumber
           )
         );
     }
 
-    // Stage 04E/04L Official Order Validators
+    // Stage 04E/04L/04N.2.2 Converged Official Order Validators
     function isValidPromotedOrderCreate(orderId, data) {
-      return data.keys().hasAll(['orderNumber', 'customerUid', 'customerName', 'customerContact', 'items', 'totalBill', 'currency', 'orderType', 'status', 'requestId', 'requestReference', 'approvedBy', 'approvedAt', 'createdAt', 'updatedAt'])
+      return data.keys().hasAll(['orderNumber', 'customerUid', 'customerName', 'customerContact', 'items', 'totalBill', 'currency', 'orderType', 'status', 'sourceRequestId', 'approvedBy', 'approvedAt', 'createdAt', 'updatedAt'])
         && data.orderNumber is string && data.orderNumber.size() >= 1 && data.orderNumber.size() <= 32 && data.orderNumber.matches('^[a-zA-Z0-9_\\-]+$')
         && data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128
         && data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 80
@@ -290,20 +319,39 @@ service cloud.firestore {
         && data.totalBill is number && data.totalBill >= 0 && data.totalBill <= 100000
         && data.currency == 'SAR'
         && data.orderType == 'pickup'
+        && (!('paymentMethod' in data) || data.paymentMethod == 'pay_on_pickup')
+        && (!('paymentStatus' in data) || data.paymentStatus in ['unpaid', 'pending', 'paid', 'pay_at_pickup'])
         && data.status == 'Pending'
-        && data.requestId is string && isValidId(data.requestId)
-        && orderId == 'ord_' + data.requestId
-        && data.requestReference is string && data.requestReference.size() >= 5 && data.requestReference.size() <= 32
+        && data.sourceRequestId is string && isValidId(data.sourceRequestId)
+        && orderId == 'ord_' + data.sourceRequestId
+        && (!('requestReference' in data) || (data.requestReference is string && data.requestReference.size() >= 5 && data.requestReference.size() <= 32))
         && data.approvedBy == request.auth.uid
+        && (!('approvedByEmail' in data) || (data.approvedByEmail is string && data.approvedByEmail.size() <= 200))
         && data.approvedAt == request.time
         && data.createdAt == request.time
         && data.updatedAt == request.time
         && !exists(/databases/$(database)/documents/orders/$(orderId))
-        && exists(/databases/$(database)/documents/orderRequests/$(data.requestId))
-        && get(/databases/$(database)/documents/orderRequests/$(data.requestId)).data.status in ['pending_review', 'under_review', 'verified']
-        && get(/databases/$(database)/documents/orderRequests/$(data.requestId)).data.customerUid == data.customerUid
-        && getAfter(/databases/$(database)/documents/orderRequests/$(data.requestId)).data.status == 'order_created'
-        && getAfter(/databases/$(database)/documents/orderRequests/$(data.requestId)).data.approvedOrderId == orderId;
+        && exists(/databases/$(database)/documents/orderRequests/$(data.sourceRequestId))
+        && get(/databases/$(database)/documents/orderRequests/$(data.sourceRequestId)).data.status in ['pending_review', 'under_review', 'reviewing', 'verified']
+        && get(/databases/$(database)/documents/orderRequests/$(data.sourceRequestId)).data.customerUid == data.customerUid
+        && getAfter(/databases/$(database)/documents/orderRequests/$(data.sourceRequestId)).data.status == 'order_created'
+        && getAfter(/databases/$(database)/documents/orderRequests/$(data.sourceRequestId)).data.approvedOrderId == orderId
+        && existsAfter(/databases/$(database)/documents/orderNumbers/$(data.orderNumber))
+        && getAfter(/databases/$(database)/documents/orderNumbers/$(data.orderNumber)).data.orderId == orderId
+        && getAfter(/databases/$(database)/documents/orderNumbers/$(data.orderNumber)).data.requestId == data.sourceRequestId;
+    }
+
+    function isValidOrderNumberClaim(data, orderNum) {
+      return data.keys().hasAll(['orderNumber', 'orderId', 'requestId', 'customerUid', 'createdAt'])
+        && data.keys().hasOnly(['orderNumber', 'orderId', 'requestId', 'customerUid', 'createdAt'])
+        && data.orderNumber is string && data.orderNumber == orderNum && data.orderNumber.size() >= 3 && data.orderNumber.size() <= 32
+        && data.orderId is string && isValidId(data.orderId)
+        && data.requestId is string && isValidId(data.requestId)
+        && data.customerUid is string && data.customerUid.size() >= 1 && data.customerUid.size() <= 128
+        && data.createdAt == request.time
+        && existsAfter(/databases/$(database)/documents/orders/$(data.orderId))
+        && getAfter(/databases/$(database)/documents/orders/$(data.orderId)).data.orderNumber == orderNum
+        && getAfter(/databases/$(database)/documents/orders/$(data.orderId)).data.sourceRequestId == data.requestId;
     }
 
     function isValidOrderUpdate(data) {
@@ -317,7 +365,7 @@ service cloud.firestore {
         && (!('subtotal' in existing()) || data.subtotal == existing().subtotal)
         && (!('currency' in existing()) || data.currency == existing().currency)
         && (!('orderType' in existing()) || data.orderType == existing().orderType)
-        && (!('requestId' in existing()) || data.requestId == existing().requestId)
+        && (!('sourceRequestId' in existing()) || data.sourceRequestId == existing().sourceRequestId)
         && (!('requestReference' in existing()) || data.requestReference == existing().requestReference)
         && (!('approvedBy' in existing()) || data.approvedBy == existing().approvedBy)
         && (!('pricingVersion' in existing()) || data.pricingVersion == existing().pricingVersion)
@@ -399,7 +447,7 @@ service cloud.firestore {
       allow delete: if isValidId(productId) && isAdmin();
     }
 
-    // /orderRequests/{requestId} — Stage 04K/04L Spark Request & Approval Flow
+    // /orderRequests/{requestId} — Stage 04K/04L/04N.2.2 Spark Request & Approval Flow
     match /orderRequests/{requestId} {
       allow get: if isValidId(requestId) && isSignedIn() && (
         isAdmin() || ('customerUid' in existing() && existing().customerUid == request.auth.uid)
@@ -407,7 +455,7 @@ service cloud.firestore {
       allow list: if isSignedIn() && (
         isVerifiedAdminToken() || ('customerUid' in resource.data && resource.data.customerUid == request.auth.uid)
       );
-      allow create: if isValidId(requestId) && isSignedIn() && isValidOrderRequestCreate(incoming());
+      allow create: if isValidId(requestId) && isSignedIn() && isValidOrderRequestCreate(incoming(), requestId);
       allow update: if isValidId(requestId) && isAdmin() && isValidOrderRequestAdminUpdate(requestId, incoming(), existing());
       allow delete: if false;
 
@@ -418,12 +466,41 @@ service cloud.firestore {
           && isValidId(logId)
           && isAdmin()
           && incoming().requestId == requestId
-          && incoming().actorUid == request.auth.uid
-          && incoming().actorRole == 'admin'
-          && incoming().action in ['start_review', 'verify', 'price_verified', 'approve', 'order_promoted', 'reject']
+          && (
+            ('actorUid' in incoming() && incoming().actorUid == request.auth.uid) ||
+            ('adminUid' in incoming() && incoming().adminUid == request.auth.uid)
+          )
+          && (!('actorRole' in incoming()) || incoming().actorRole == 'admin')
+          && incoming().action in [
+            'start_review', 'verify', 'verify_request',
+            'price_verified', 'price_verification',
+            'approve', 'approve_and_promote',
+            'order_promoted', 'order_promotion',
+            'reject', 'reject_request',
+            'duplicate_approval_blocked', 'verification_blocked'
+          ]
           && incoming().createdAt == request.time;
         allow update, delete: if false;
       }
+    }
+
+    // /orderNumbers/{orderNumber} — Atomic unique official PM-XXXXXX order number claim registry
+    match /orderNumbers/{orderNumber} {
+      allow get: if isValidId(orderNumber) && isAdmin();
+      allow list: if isVerifiedAdminToken();
+      allow create: if isValidId(orderNumber) && isAdmin() && isValidOrderNumberClaim(incoming(), orderNumber);
+      allow update, delete: if false;
+    }
+
+    // /orderRequestAuditLogs/{auditId} — Cross-app flat append-only audit trail
+    match /orderRequestAuditLogs/{auditId} {
+      allow get: if isValidId(auditId) && isAdmin();
+      allow list: if isVerifiedAdminToken();
+      allow create: if isValidId(auditId)
+        && isAdmin()
+        && incoming().actorUid == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update, delete: if false;
     }
 
     // /orders/{orderId} — Customer direct creation blocked; only Admin transaction from /orderRequests allowed

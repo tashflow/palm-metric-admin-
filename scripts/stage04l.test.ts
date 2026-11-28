@@ -32,6 +32,7 @@ import {
 class InMemoryTransactionalStore implements OrderRequestStore {
   requests = new Map<string, Record<string, unknown>>();
   orders = new Map<string, Order>();
+  orderNumbers = new Map<string, Record<string, unknown>>();
   menu = new Map<string, MenuItem>();
   customizations = new Map<string, ProductCustomization>();
   auditLogs = new Map<string, OrderRequestAuditEntry[]>();
@@ -67,6 +68,7 @@ class InMemoryTransactionalStore implements OrderRequestStore {
     try {
       const stagedRequests = new Map(this.requests);
       const stagedOrders = new Map(this.orders);
+      const stagedOrderNumbers = new Map(this.orderNumbers);
       const menuSnapshot = this.menu;
       const customSnapshot = this.customizations;
       const categoriesCopy = this.categories;
@@ -81,6 +83,10 @@ class InMemoryTransactionalStore implements OrderRequestStore {
         },
         async getOrder(orderId) {
           const existing = stagedOrders.get(orderId);
+          return existing ? structuredClone(existing) : null;
+        },
+        async getOrderNumberClaim(orderNumber) {
+          const existing = stagedOrderNumbers.get(orderNumber);
           return existing ? structuredClone(existing) : null;
         },
         async getCatalogContext(itemIds) {
@@ -106,12 +112,25 @@ class InMemoryTransactionalStore implements OrderRequestStore {
             this.requests.set(requestId, { ...current, ...patch });
           });
         },
+        updateMenuDoc: (itemId, patch) => {
+          pendingMutations.push(() => {
+            const current = this.menu.get(itemId);
+            if (current) {
+              this.menu.set(itemId, { ...current, ...(patch as Partial<MenuItem>) });
+            }
+          });
+        },
         setOrder: (orderId, orderData) => {
           pendingMutations.push(() => {
             this.orders.set(orderId, {
               id: orderId,
               ...(orderData as Omit<Order, 'id'>),
             });
+          });
+        },
+        setOrderNumberClaim: (orderNumber, claimData) => {
+          pendingMutations.push(() => {
+            this.orderNumbers.set(orderNumber, structuredClone(claimData));
           });
         },
         addAuditLog: (requestId, entry) => {
@@ -386,7 +405,7 @@ test('03. Normalizes incoming pending_review order requests cleanly', () => {
 test('04. Supports filtering by all Stage 04L statuses and searching by REQ- reference', () => {
   const statuses: OrderRequestStatus[] = [
     'pending_review',
-    'under_review',
+    'reviewing',
     'verified',
     'rejected',
     'order_created',
@@ -412,8 +431,8 @@ test('04. Supports filtering by all Stage 04L statuses and searching by REQ- ref
   );
 });
 
-// 5. Admin starts review (under_review) & updates audit log
-test('05. Admin starts review, transitions request to under_review, and records audit log', async () => {
+// 5. Admin starts review (reviewing) & updates audit log
+test('05. Admin starts review, transitions request to reviewing, and records audit log', async () => {
   const store = createFixtureStore();
   const updated = await startOrderRequestReview({
     store,
@@ -421,14 +440,14 @@ test('05. Admin starts review, transitions request to under_review, and records 
     actor: ADMIN_A,
     note: 'Checking milk availability',
   });
-  assert.equal(updated.status, 'under_review');
+  assert.equal(updated.status, 'reviewing');
   assert.equal(updated.reviewStatus, 'in_review');
   assert.equal(updated.reviewedBy, ADMIN_A.uid);
 
   const logs = store.auditLogs.get('req_001') || [];
   assert.equal(logs.length, 1);
   assert.equal(logs[0].action, 'start_review');
-  assert.equal(logs[0].toStatus, 'under_review');
+  assert.equal(logs[0].toStatus, 'reviewing');
 });
 
 // 6. Authoritative pricing completely ignores tampered client-submitted figures
@@ -597,9 +616,11 @@ test('11 & 12. Approval atomically creates official /orders doc with determinist
   assert.equal(res.order.currency, 'SAR');
   assert.equal(res.order.orderType, 'pickup');
   assert.equal(res.order.status, 'Pending');
-  assert.equal(res.order.requestId, 'req_001');
+  assert.equal(res.order.sourceRequestId, 'req_001');
   assert.equal(res.order.requestReference, 'REQ-261122-1001');
   assert.equal(res.order.approvedBy, ADMIN_A.uid);
+  assert.equal(store.menu.get('matcha-palm')?.stockQuantity, 5);
+  assert.equal(store.orderNumbers.get(expectedOrderNum)?.orderId, expectedOrderId);
   // Legacy /orders compatibility fields
   assert.equal(res.order.items[0].milkOption, 'coconut');
   assert.equal(res.order.items[0].milkExtraPrice, 3);
@@ -611,6 +632,7 @@ test('11 & 12. Approval atomically creates official /orders doc with determinist
   assert.equal(persistedReq.reviewStatus, 'approved');
   assert.equal(persistedReq.approvedOrderId, expectedOrderId);
   assert.equal(persistedReq.approvedOrderNumber, expectedOrderNum);
+  assert.equal(persistedReq.verifiedTotalSar, 46.6);
   assert.equal(store.orders.size, 1);
 });
 
@@ -685,11 +707,11 @@ test('17 & 18. Spark rules prevent customer post-submit updates/tampering and is
 
   assert.ok(reqBlock.includes('existing().customerUid == request.auth.uid'));
   assert.ok(reqBlock.includes('resource.data.customerUid == request.auth.uid'));
-  assert.ok(reqBlock.includes('isValidOrderRequestCreate(incoming())'));
+  assert.ok(reqBlock.includes('isValidOrderRequestCreate(incoming(), requestId)'));
   assert.ok(sparkRules.includes("data.status == 'pending_review'"));
   assert.ok(reqBlock.includes('allow update: if isValidId(requestId) && isAdmin()'));
   assert.ok(reqBlock.includes('allow delete: if false;'));
-  assert.ok(sparkRules.includes("prev.status in ['pending_review', 'under_review', 'verified']"));
+  assert.ok(sparkRules.includes("prev.status in ['pending_review', 'under_review', 'reviewing', 'verified']"));
 });
 
 // 19. Audit logs record complete admin workflow & are immutable in Spark rules
@@ -731,13 +753,15 @@ test('20. Proposed Spark rules and firebase-blueprint.json satisfy Spark securit
   // Rules security invariants
   assert.match(sparkRules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
   assert.equal(sparkRules.includes('sign_in_provider is string'), false);
-  assert.ok(sparkRules.includes("orderId == 'ord_' + data.requestId"));
+  assert.ok(sparkRules.includes("orderId == 'ord_' + data.sourceRequestId"));
   assert.ok(sparkRules.includes('existsAfter(/databases/$(database)/documents/orders/$(data.approvedOrderId))'));
-  assert.ok(sparkRules.includes("getAfter(/databases/$(database)/documents/orderRequests/$(data.requestId)).data.status == 'order_created'"));
+  assert.ok(sparkRules.includes("getAfter(/databases/$(database)/documents/orderRequests/$(data.sourceRequestId)).data.status == 'order_created'"));
+  assert.ok(sparkRules.includes('existsAfter(/databases/$(database)/documents/orderNumbers/$(data.orderNumber))'));
 
   // Blueprint entries exist
   assert.ok('/orderRequests/{requestId}' in blueprint.firestore);
   assert.ok('/orderRequests/{requestId}/auditLogs/{logId}' in blueprint.firestore);
+  assert.ok('/orderNumbers/{orderNumber}' in blueprint.firestore);
   assert.ok('/orders/{orderId}' in blueprint.firestore);
 });
 
@@ -804,4 +828,40 @@ test('22. Approval transaction aborts cleanly if product stock becomes unavailab
   );
   assert.equal(store.orders.size, 0);
   assert.equal(store.requests.get('req_001')?.status, 'verified');
+});
+
+// 23. Atomic stock deduction & depletion flag update on approval without double-deducting on replay
+test('23. Approval atomically deducts managed stock, flips inStock=false on zero, and ignores unmanaged items', async () => {
+  const store = createFixtureStore();
+  // Seed stock-tracked request consuming all 5 matcha-palm
+  store.seedRequest(
+    normalizeOrderRequest('req_deplete', {
+      requestReference: 'REQ-DEPLETE-1',
+      customerUid: 'cust_dep',
+      customerName: 'Depletion Test',
+      customerContact: '0504445555',
+      items: [
+        { itemId: 'matcha-palm', quantity: 5 },
+      ],
+      status: 'pending_review',
+    })
+  );
+
+  const first = await approveAndPromoteOrderRequest({
+    store,
+    requestId: 'req_deplete',
+    actor: ADMIN_A,
+  });
+  assert.equal(first.idempotentReplay, false);
+  assert.equal(store.menu.get('matcha-palm')?.stockQuantity, 0);
+  assert.equal(store.menu.get('matcha-palm')?.inStock, false);
+
+  // Concurrent / repeated replay must not deduct again or fail on remaining 0 stock
+  const replay = await approveAndPromoteOrderRequest({
+    store,
+    requestId: 'req_deplete',
+    actor: ADMIN_B,
+  });
+  assert.equal(replay.idempotentReplay, true);
+  assert.equal(store.menu.get('matcha-palm')?.stockQuantity, 0);
 });

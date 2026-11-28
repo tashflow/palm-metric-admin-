@@ -1,0 +1,151 @@
+{
+  "stage": "STAGE_04N.2.7",
+  "mode": "strict_read_only_admin_only",
+  "auditedAtUtc": "2026-11-28T04:51:00Z",
+  "verifiedAdminWorkspace": {
+    "path": "/app/applet",
+    "confirmedIdentity": true,
+    "appName": "Verda Admin — Specialty Coffee & Food Management",
+    "firebaseProjectId": "palm-metric-app",
+    "firestoreDatabaseId": "(default)"
+  },
+  "identityA": {
+    "status": "UNRESOLVED — SOURCE ARCHIVE NOT AVAILABLE",
+    "expectedFilename": "palm-metric-stage04n24-admin.zip",
+    "expectedFileCount": 64,
+    "expectedSizeBytes": 1844172,
+    "expectedSha256": "c00e9e4c4558d5f2b7841369289177484466fd2c3a13d62578fa33cc9fff143f",
+    "presentOnDisk": false
+  },
+  "identityB": {
+    "status": "PRESENT_AND_IDENTICAL_TO_WORKSPACE",
+    "filename": "palm-metric-stage04n24-admin.zip",
+    "path": "/app/applet/palm-metric-stage04n24-admin.zip",
+    "fileCount": 112,
+    "sizeBytes": 1927570,
+    "sha256": "be072ce3cb54bdf0cdef35225e242dae9009410432112b78c530f29d95f2bbe6",
+    "mtimeUtc": "2026-11-28T04:34:43.273931+00:00",
+    "extractionHashMismatches": 0,
+    "workspaceContentDiffs": 0
+  },
+  "adminTestSummary": {
+    "totalAssertionsReported": 82,
+    "genuineExecutedTests": 58,
+    "breakdown": {
+      "mockTransactionIntegration": 25,
+      "pureUnitAndSchema": 26,
+      "staticRulesAndConfig": 7,
+      "constantStubAssertionsInStage04n": 24,
+      "liveEmulatorTests": 0
+    },
+    "failed": 0,
+    "skipped": 0,
+    "emulatorStatus": "BLOCKED — NO_JAVA (firebase CLI 15.36.0)"
+  },
+  "discoveredAdminArchives": [
+    {
+      "path": "/app/applet/palm-metric-stage04n24-admin.zip",
+      "fileCount": 112,
+      "bytes": 1927570,
+      "sha256": "be072ce3cb54bdf0cdef35225e242dae9009410432112b78c530f29d95f2bbe6",
+      "mtimeUtc": "2026-11-28T04:34:43.273931+00:00",
+      "matches": "Identity B"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n22-admin.zip",
+      "fileCount": 98,
+      "bytes": 1893684,
+      "sha256": "032688b3a8ee577a76bcc64ea20c0a94a79dd2251ec1196db112599aa941a9e4",
+      "mtimeUtc": "2026-11-28T04:34:43.291272+00:00",
+      "matches": "Superseded 04N.2.2"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n21-admin.zip",
+      "fileCount": 87,
+      "bytes": 1870040,
+      "sha256": "e449dfcfbcf88ba0382e7faa726d06562752dd367438ad6ec2199902c5189efc",
+      "mtimeUtc": "2026-11-28T04:34:43.345195+00:00",
+      "matches": "Duplicate of stage04n2-admin.zip"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n2-admin.zip",
+      "fileCount": 87,
+      "bytes": 1870040,
+      "sha256": "e449dfcfbcf88ba0382e7faa726d06562752dd367438ad6ec2199902c5189efc",
+      "mtimeUtc": "2026-11-28T04:34:42.559782+00:00",
+      "matches": "Superseded 04N.2"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n1-admin.zip",
+      "fileCount": 87,
+      "bytes": 1869885,
+      "sha256": "ad5c6ed98f7b5156a85e7e00aad8adec8fc3e41809e0a487585513ab1188fbbd",
+      "mtimeUtc": "2026-11-28T04:34:43.282027+00:00",
+      "matches": "Superseded 04N.1"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n1-customer.zip",
+      "fileCount": 87,
+      "bytes": 1869874,
+      "sha256": "f7c15c7643f3f956be837be436630964c77ef2acbdc6eb4cd78963a1e1e00188",
+      "mtimeUtc": "2026-11-28T04:34:43.268404+00:00",
+      "matches": "Mislabeled Admin archive"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n-admin.zip",
+      "fileCount": 81,
+      "bytes": 1865395,
+      "sha256": "7cc317816928dc539a73571952a1351104108a3843eb51d9e82850898ae321b4",
+      "mtimeUtc": "2026-11-28T04:34:43.350741+00:00",
+      "matches": "Duplicate of stage04n-customer.zip"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04n-customer.zip",
+      "fileCount": 81,
+      "bytes": 1865395,
+      "sha256": "7cc317816928dc539a73571952a1351104108a3843eb51d9e82850898ae321b4",
+      "mtimeUtc": "2026-11-28T04:34:43.322357+00:00",
+      "matches": "Mislabeled duplicate Admin archive"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04m2-admin.zip",
+      "fileCount": 73,
+      "bytes": 1856291,
+      "sha256": "3a3801a521bc4abb7477115910e931dc6d2f2c424c93b649a8544fd87ab07a0a",
+      "mtimeUtc": "2026-11-28T04:34:43.302783+00:00",
+      "matches": "Duplicate of stage04m2-customer.zip"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04m2-customer.zip",
+      "fileCount": 73,
+      "bytes": 1856291,
+      "sha256": "3a3801a521bc4abb7477115910e931dc6d2f2c424c93b649a8544fd87ab07a0a",
+      "mtimeUtc": "2026-11-28T04:34:43.297400+00:00",
+      "matches": "Mislabeled duplicate Admin archive"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04m1-runnable.zip",
+      "fileCount": 65,
+      "bytes": 1839171,
+      "sha256": "b12db5159cae184db6b730ce5aacc44566a3f1e76bcbeb338c04c5715bce8e6d",
+      "mtimeUtc": "2026-11-28T04:34:42.570035+00:00",
+      "matches": "Superseded 04M1"
+    },
+    {
+      "path": "/app/applet/palm-metric-stage04m-runnable.zip",
+      "fileCount": 61,
+      "bytes": 1834970,
+      "sha256": "66bfddbb654f3f32a53302bdcf4ab996a093f7e2ff78b7e1bf165b730ef8253d",
+      "mtimeUtc": "2026-11-28T04:34:42.563978+00:00",
+      "matches": "Superseded 04M"
+    },
+    {
+      "path": "/app/applet/palm-metric-admin-stage04l.zip",
+      "fileCount": 55,
+      "bytes": 1823063,
+      "sha256": "de62b84fb2c26cf6303bee58e37393372e71964c706dfb5a6a44d6499e0e709b",
+      "mtimeUtc": "2026-11-28T04:34:43.280766+00:00",
+      "matches": "Superseded 04L"
+    }
+  ]
+}

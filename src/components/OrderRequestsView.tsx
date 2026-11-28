@@ -62,7 +62,7 @@ interface OrderRequestsViewProps {
 
 const REQUEST_STATUS_STYLES: Record<OrderRequestStatus, string> = {
   pending_review: 'bg-[#FEF3C7] border-[#F59E0B] text-[#92400E]',
-  under_review: 'bg-[#E0F2FE] border-[#38BDF8] text-[#075985]',
+  reviewing: 'bg-[#E0F2FE] border-[#38BDF8] text-[#075985]',
   verified: 'bg-[#E8EFEA] border-[#4A6B56] text-[#223629]',
   rejected: 'bg-[#FEF2F2] border-[#FCA5A5] text-[#991B1B]',
   order_created: 'bg-[#DCFCE7] border-[#4ADE80] text-[#166534]',
@@ -107,7 +107,7 @@ export function OrderRequestsView({
     switch (status) {
       case 'pending_review':
         return t.filterPendingReview;
-      case 'under_review':
+      case 'reviewing':
         return t.filterUnderReview;
       case 'verified':
         return t.filterVerified;
@@ -180,7 +180,7 @@ export function OrderRequestsView({
     const counts: Record<'All' | OrderRequestStatus, number> = {
       All: requests.length,
       pending_review: 0,
-      under_review: 0,
+      reviewing: 0,
       verified: 0,
       rejected: 0,
       order_created: 0,
@@ -963,7 +963,7 @@ export function OrderRequestsView({
                       )}
 
                       {(selectedRequest.status === 'pending_review' ||
-                        selectedRequest.status === 'under_review') && (
+                        selectedRequest.status === 'reviewing') && (
                         <button
                           type="button"
                           disabled={Boolean(actionInFlight) || !verificationOk}

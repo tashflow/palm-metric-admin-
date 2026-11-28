@@ -85,6 +85,7 @@ export interface MenuItem {
   available?: boolean;
   outOfStock?: boolean;
   stockQuantity?: number;
+  stockCount?: number;
   imageUrl: string;
   storagePath: string;
   allowMilkOption?: boolean;
@@ -180,6 +181,7 @@ export interface Order {
   totalBill: number;
   currency?: 'SAR';
   orderType?: 'pickup' | 'delivery';
+  paymentMethod?: 'pay_on_pickup';
   paymentStatus?: 'unpaid' | 'pending' | 'paid' | 'pay_at_pickup';
   status: OrderStatus;
   notes?: string;
@@ -187,6 +189,7 @@ export interface Order {
   lang?: 'ar' | 'en';
   idempotencyKey?: string;
   pricingVersion?: number;
+  sourceRequestId?: string;
   requestId?: string;
   requestReference?: string;
   approvedBy?: string;
@@ -198,14 +201,14 @@ export interface Order {
 
 export type OrderRequestStatus =
   | 'pending_review'
-  | 'under_review'
+  | 'reviewing'
   | 'verified'
   | 'rejected'
   | 'order_created';
 
 export const ORDER_REQUEST_STATUSES: OrderRequestStatus[] = [
   'pending_review',
-  'under_review',
+  'reviewing',
   'verified',
   'rejected',
   'order_created',
@@ -281,8 +284,28 @@ export interface VerifiedOrderLineItem extends OrderLineItem {
   priceAdjustedFromSubmitted?: boolean;
 }
 
+export interface VerifiedPricingLineSummary {
+  itemId: string;
+  name: string;
+  nameAr?: string;
+  quantity: number;
+  basePriceSar: number;
+  customizationTotalSar: number;
+  unitPriceSar: number;
+  lineTotalSar: number;
+  selectedCustomizations?: SelectedCustomizationOption[];
+  temperature?: TemperatureOption;
+  milkOption?: MilkOption;
+  milkExtraPrice?: number;
+  specialInstructions?: string;
+  note: string;
+  imageUrl: string;
+  inStock: boolean;
+}
+
 export interface VerifiedPricingBreakdown {
   currency: 'SAR';
+  orderType?: 'pickup';
   pricingVersion: number;
   subtotalHalalas: number;
   discountHalalas: number;
@@ -292,6 +315,12 @@ export interface VerifiedPricingBreakdown {
   discountSar: number;
   taxSar: number;
   totalSar: number;
+  totalBillSar?: number;
+  itemCount?: number;
+  verifiedAtMs?: number;
+  verifiedByUid?: string;
+  verifiedByEmail?: string;
+  items?: VerifiedPricingLineSummary[];
   appliedDiscountLabel?: string;
   appliedTaxRatePercent?: number;
   clientSubmittedTotalSar?: number;
@@ -312,10 +341,17 @@ export type OrderRequestAuditAction =
   | 'submitted'
   | 'start_review'
   | 'verify'
+  | 'verify_request'
   | 'price_verified'
+  | 'price_verification'
   | 'approve'
+  | 'approve_and_promote'
   | 'order_promoted'
-  | 'reject';
+  | 'order_promotion'
+  | 'reject'
+  | 'reject_request'
+  | 'duplicate_approval_blocked'
+  | 'verification_blocked';
 
 export interface OrderRequestAuditEntry {
   id: string;
@@ -325,10 +361,16 @@ export interface OrderRequestAuditEntry {
   actorUid: string;
   actorEmail?: string;
   actorRole: 'admin' | 'customer' | 'system';
+  adminUid?: string;
+  adminEmail?: string;
   fromStatus?: OrderRequestStatus;
   toStatus: OrderRequestStatus;
+  previousStatus?: OrderRequestStatus;
+  newStatus?: OrderRequestStatus;
   note?: string;
+  details?: string;
   rejectionReason?: string;
+  reason?: string;
   approvedOrderId?: string;
   approvedOrderNumber?: string;
   verifiedTotalSar?: number;
@@ -338,19 +380,25 @@ export interface OrderRequestAuditEntry {
 
 export interface OrderRequest {
   id: string;
+  requestId?: string;
   requestReference: string;
   customerUid: string;
   customerName: string;
   customerContact: string;
+  orderType?: 'pickup';
   pickupType?: 'pickup';
+  currency?: 'SAR';
   pickupWindow?: string;
   items: OrderRequestItemInput[];
   notes?: string;
+  orderNote?: string;
   status: OrderRequestStatus;
   reviewStatus: OrderRequestReviewStatus;
+  requestSource?: string;
   sourceApp?: string;
   lang?: 'ar' | 'en';
   clientEstimatedTotal?: number;
+  verifiedTotalSar?: number;
   verifiedPricing?: VerifiedPricingBreakdown;
   verifiedItems?: VerifiedOrderLineItem[];
   reviewedBy?: string;
